@@ -1,0 +1,79 @@
+PGM BIOS Function: sub_4076 (Initialise Ranking Table)
+----------------------------------------------------
+Summary: Clears the score/ranking structures anchored at the buffer pointed to by rg_0. The routine wipes two contiguous tables: eight primary entries (0x1C bytes each) and twelve secondary entries (also 0x1C bytes each). Each entry has multiple 32-bit fields reset to zero and an index/flag word set to 0xFFFF. A one-time call to sub_D9B2 initialises metadata immediately after the header byte.
+
+Prototype suggestion:
+    void pgm_ranking_reset(void *table_base);
+
+Memory layout (per entry, 0x1C bytes):
+- +0x00/+0x04/+0x08/+0x0C/+0x10/+0x14: 32-bit score/time fields.
+- +0x18: 16-bit marker set to 0xFFFF (slot unused).
+- Remaining padding cleared to zero.
+
+Behaviour walkthrough:
+1. Header initialisation: write 0xFF to *(uint8_t *)table_base, clear the two 32-bit counters at offsets +0x14/+0x18, then call sub_D9B2(table_base + 1, 0x13) to reset ancillary state (likely player name buffer).
+2. Loop #1 (loc_40A6): walk eight entries starting at 	able_base, zero out all fields, and set the marker at +0x18 to 0xFFFF.
+3. Loop #2 (loc_40D8): starting at 	able_base + 0xE0, clear twelve more entries in the same fashion.
+
+Assembly excerpt:
+`sm
+0x4076: movem.l d2/a2-a3, -(sp)
+0x407a: movea.l 0x0C(sp), a3        ; table_base
+0x407e: move.b  #0xFF, (a3)
+0x4082: clr.l   0x14(a3)
+0x4086: clr.l   0x18(a3)
+0x408a: pea     (0x13).w
+0x408e: clr.l   -(sp)
+0x4090: move.l  a3, d0
+0x4092: addq.l  #1, d0
+0x4094: move.l  d0, -(sp)
+0x4096: jsr     sub_D9B2            ; reset name/metadata
+...
+; Loop over 8 ranking entries (stride = 0x1C)
+0x40a6: clr.l   (a2)
+0x40a8: clr.l   4(a2)
+0x40ac: clr.l   8(a2)
+0x40b0: clr.l   0x0C(a2)
+0x40b4: clr.l   0x10(a2)
+0x40b8: clr.l   0x14(a2)
+0x40bc: move.w  #0xFFFF, 0x18(a2)
+...
+; Second table (12 entries) located at base + 0xE0
+0x40d2: lea     0xE0(a3), a2
+...
+0x40e2: move.w  #0xFFFF, 0x18(a2)
+...
+`
+
+Reconstructed C implementation:
+`c
+void pgm_ranking_reset(void *table_base) {
+    uint8_t *base = (uint8_t *)table_base;
+    base[0] = 0xFF;
+    *(uint32_t *)(base + 0x14) = 0;
+    *(uint32_t *)(base + 0x18) = 0;
+    sub_D9B2(base + 1, 0x13);
+
+    /* Clear 8 primary entries */
+    for (int i = 0; i < 8; ++i) {
+        uint8_t *entry = base + i * 0x1C;
+        for (int off = 0; off <= 0x14; off += 4)
+            *(uint32_t *)(entry + off) = 0;
+        *(uint16_t *)(entry + 0x18) = 0xFFFF;
+    }
+
+    /* Clear 12 secondary entries starting at base + 0xE0 */
+    for (int i = 0; i < 12; ++i) {
+        uint8_t *entry = base + 0xE0 + i * 0x1C;
+        for (int off = 0; off <= 0x14; off += 4)
+            *(uint32_t *)(entry + off) = 0;
+        *(uint16_t *)(entry + 0x18) = 0xFFFF;
+    }
+}
+`
+
+Analysis notes:
+- The structure size (0x1C) and loop counts suggest two ranking tables: top 8 scores and 12 reserve slots.
+- sub_D9B2 probably clears the player name area; confirm when that routine is analysed.
+- The double initialisation of 0x18(a2) in the second loop (two writes of 0xFFFF) mirrors the first loop; an optimisation could remove the duplicate.
+- Ensure caller provides a buffer large enough for both tables (at least 0x1C * (8 + 12) + header).

@@ -1,0 +1,92 @@
+PGM BIOS Function: sub_42CC (Render Ranking Subset)
+--------------------------------------------------
+Summary: Renders a paged subset of the ranking table. The caller supplies the table pointer and the number of entries (rg_4), and the function prints that many rows starting at 	able_base + 0xE0 + entry_index * 0x1C. Each non-empty slot is formatted similarly to sub_4138 but using shorter string templates ("S%02d", "%7d", etc.). It also accumulates secondary totals from the remaining entries and prints them beneath the table.
+
+Parameters:
+- arg_0: pointer to ranking table base (same structure used by sub_4076/sub_4138).
+- arg_4: number of rows to display (expected 0?6). Values 0 or 6 trigger a warning via sub_7FCC.
+
+Per-entry rendering (for the first rg_4 slots):
+- Uses the table at 0xE0B8 and entry byte +0x1A to fetch a course label.
+- Heeds byte +0x1B only indirectly (difficulty handled elsewhere).
+- Numeric columns come from dwords +0x00, +0x04, +0x08.
+- Each row is printed via sub_74CC with templates "S%02d", "%7d", "%7d", "%4d" at successive Y positions (0x0F/0x1E/0x2D).
+
+After the first loop finishes, the routine walks the remaining 12 ?extended? entries (base + 0xE0) to compute aggregate sums, then prints the totals using "%7d" and "%4d" strings.
+
+Key assembly fragments:
+`sm
+0x42de: tst.l  d4
+0x42e0: beq.s  loc_4302            ; clamp invalid count
+0x42e8: pea    ("M0-M6").l        ; warn if arg_4 not expected
+...
+0x433e: cmpi.w #0xFF, 0x18(a2)     ; skip empty slots
+0x4350: jsr     sub_D8F4           ; scale score value
+0x4366: move.l (0xE0B8 + stage*4), -(sp)
+0x436a: pea     ("S%02d").l       ; header string
+0x4384: jsr     (sub_74CC).l       ; draw header row
+0x438e: move.l (a2), -(sp)
+0x43a4: ...                        ; "%7d" column 1
+0x43b4: move.l 4(a2), -(sp)
+0x43cc: ...                        ; "%7d" column 2
+0x43dc: move.l 8(a2), -(sp)
+0x43f4: ...                        ; "%4d" column 3
+0x4246/0x4404: loop/advance logic
+0x4426+: second pass to sum the 12 extended entries
+0x4444+: print totals using "%7d" / "%4d"
+`
+
+Reconstructed C-style pseudocode:
+`c
+void pgm_ranking_render_subset(void *table_base, uint32_t count) {
+    uint8_t *base = (uint8_t *)table_base;
+
+    if (count == 0 || count == 6) {
+        sub_7FCC("M0-M6", "C OO k C", 0x19F);  /* firmware warning */
+    }
+
+    uint32_t sum_col0 = 0, sum_col1 = 0, sum_col2 = 0;
+    uint32_t rendered = 0;
+    uint8_t *entry = base + count * 0x1C + 0xE0;  /* first page segment */
+
+    for (; rendered < count; ++rendered, entry += 0x1C) {
+        if (*(uint16_t *)(entry + 0x18) == 0xFFFF)
+            continue;
+
+        uint32_t scaled = sub_D8F4(*(uint16_t *)(entry + 0x18), 0x64);
+        const char *course = ((const char **)0xE0B8)[entry[0x1A]];
+        uint32_t x = rendered * 2 + 7;
+
+        sub_74CC(format("S%02d", course, entry[0x1B]), x, 2);
+        sub_74CC(format("%7d", *(uint32_t *)(entry + 0x00)), x, 0x0F);
+        sub_74CC(format("%7d", *(uint32_t *)(entry + 0x04)), x, 0x1E);
+        sub_74CC(format("%4d", *(uint32_t *)(entry + 0x08)), x, 0x2D);
+
+        sum_col0 += *(uint32_t *)(entry + 0x00);
+        sum_col1 += *(uint32_t *)(entry + 0x04);
+        sum_col2 += *(uint32_t *)(entry + 0x08);
+    }
+
+    /* Aggregate remaining slots (base + 0xE0, 12 entries) */
+    uint32_t rem0 = 0, rem1 = 0, rem2 = 0;
+    uint8_t *rem = base + 0xE0;
+    for (int i = 0; i < 12; ++i, rem += 0x1C) {
+        if (*(uint16_t *)(rem + 0x18) == 0xFFFF)
+            continue;
+        rem0 += *(uint32_t *)(rem + 0x00);
+        rem1 += *(uint32_t *)(rem + 0x04);
+        rem2 += *(uint32_t *)(rem + 0x08);
+    }
+
+    uint32_t total_x = rendered * 2 + 7;
+    sub_74CC(format("%7d", rem0), total_x, 0x0F);
+    sub_74CC(format("%7d", rem1), total_x, 0x1E);
+    sub_74CC(format("%4d", rem2), total_x, 0x2D);
+}
+`
+
+Analysis notes:
+- Entry selection uses count to choose which block of 8/12 entries to display; invalid counts trigger a firmware warning via sub_7FCC but execution continues.
+- The function reuses the same string resources as sub_4138 but with more compact headers ("S%02d" instead of "S%02d %02d"). This likely corresponds to a secondary ranking screen (e.g., link or team records).
+- The second pass over the 12-entry block produces aggregate totals even if they were already shown in the first loop.
+- Rendering relies heavily on sub_74CC; ensure that routine interprets the pushed arguments as (string pointer, palette, column, row, etc.).

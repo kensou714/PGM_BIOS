@@ -4,28 +4,76 @@ PGM BIOS Function Analysis Progress
 Scope
 -----
 - Target binary: PGM BIOS (pgm_p01s.u20) loaded at base 0x000000 via IDA + MCP.
-- Objective: document every discovered function (80 total from MCP unctions --count 100).
-- Output convention: one file per function stored under docs/pgm_bios_sub_<ADDR>.txt with assembly, annotated C, and analysis notes.
+- Objective: document every discovered function (80 total from MCP "functions --count 100").
+- Output convention: one file per function stored under docs/pgm_bios_sub_<ADDR>.txt with assembly, annotated C, and analysis notes. Helper routines live under docs/pgm_helper_*.txt.
 
 Completed
 ---------
-1. sub_D22 (docs/pgm_bios_sub_D22.txt) ? 32-byte block copy helper.
-2. sub_DC8 (docs/pgm_bios_sub_DC8.txt) ? sequential word copy helper.
+1.  sub_D22   (docs/pgm_bios_sub_D22.txt)
+2.  sub_DC8   (docs/pgm_bios_sub_DC8.txt)
+3.  sub_E10   (docs/pgm_bios_sub_E10.txt)
+4.  sub_F40   (docs/pgm_bios_sub_F40.txt)
+5.  sub_F8A   (docs/pgm_bios_sub_F8A.txt)
+6.  sub_1012  (docs/pgm_bios_sub_1012.txt)
+7.  sub_104E  (docs/pgm_bios_sub_104E.txt)
+8.  sub_1188  (docs/pgm_bios_sub_1188.txt)
+9.  sub_12B8  (docs/pgm_bios_sub_12B8.txt)
+10. sub_1310  (docs/pgm_bios_sub_1310.txt)
+11. sub_1730  (docs/pgm_bios_sub_1730.txt)
+12. sub_17F6  (docs/pgm_bios_sub_17F6.txt)
+13. nullsub_1 (docs/pgm_bios_nullsub_1.txt)
+14. sub_190C  (docs/pgm_bios_sub_190C.txt)
+15. sub_1910  (docs/pgm_bios_sub_1910.txt)
+16. sub_2008  (docs/pgm_bios_sub_2008.txt)
+17. sub_2086  (docs/pgm_bios_sub_2086.txt)
+18. sub_21AC  (docs/pgm_bios_sub_21AC.txt)
+19. sub_2208  (docs/pgm_bios_sub_2208.txt)
+20. sub_2280  (docs/pgm_bios_sub_2280.txt)
+21. sub_22A0  (docs/pgm_bios_sub_22A0.txt)
+22. sub_22E4  (docs/pgm_bios_sub_22E4.txt)
+23. sub_238E  (docs/pgm_bios_sub_238E.txt)
+24. sub_2466  (docs/pgm_bios_sub_2466.txt)
+25. sub_250A  (docs/pgm_bios_sub_250A.txt)
+26. sub_27B0  (docs/pgm_bios_sub_27B0.txt)
+27. sub_2C6C  (docs/pgm_bios_sub_2C6C.txt)
+28. sub_3054  (docs/pgm_bios_sub_3054.txt)
+29. sub_3798  (docs/pgm_bios_sub_3798.txt)
+30. sub_37D6  (docs/pgm_bios_sub_37D6.txt)
+31. sub_383C  (docs/pgm_bios_sub_383C.txt)
+32. sub_3E3C  (docs/pgm_bios_sub_3E3C.txt)
+33. sub_4076  (docs/pgm_bios_sub_4076.txt)
+34. sub_4138  (docs/pgm_bios_sub_4138.txt)
+35. sub_42CC  (docs/pgm_bios_sub_42CC.txt)
+36. sub_46C4  (docs/pgm_bios_sub_46C4.txt)
+37. sub_4958  (docs/pgm_bios_sub_4958.txt)
+38. sub_545E  (docs/pgm_bios_sub_545E.txt)
+39. sub_54EC  (docs/pgm_bios_sub_54EC.txt)
+40. sub_55AA  (docs/pgm_bios_sub_55AA.txt)
+41. sub_5986  (docs/pgm_bios_sub_5986.txt)
+42. sub_63E2  (docs/pgm_bios_sub_63E2.txt)
+43. sub_6910  (docs/pgm_bios_sub_6910.txt)
+44. sub_6928  (docs/pgm_bios_sub_6928.txt)
+45. sub_6C9A  (docs/pgm_bios_sub_6C9A.txt)
+46. sub_6DEE  (docs/pgm_bios_sub_6DEE.txt)
+47. sub_6E72  (docs/pgm_bios_sub_6E72.txt)
+48. Helper sub_D80A (docs/pgm_helper_sub_D80A.txt) ? stride/index multiply.
+49. Helper sub_D9B2 (docs/pgm_helper_sub_D9B2.txt) ? safe block copy.
+50. Helper sub_7F6A (docs/pgm_helper_sub_7F6A.txt) ? sprite strip builder.
 
 In Progress / TODO
 ------------------
-- Next candidates (in address order): sub_E10, sub_F40, sub_F8A.
-- Confirm argument naming by cross-referencing callers inside IDA where necessary.
-- Capture any discovered global state or hardware register usage in the analysis notes for reuse.
+- Map remaining branches of sub_6E72 (loc_6F6A, loc_6FCE, loc_701A) to capture full character-handling logic.
+- Document math helpers `sub_D874`, `sub_D8D8`, `sub_DA16` which appear in text/ranking routines.
+- Analyse higher-level controllers (e.g., sub_6F6A entry points, sub_7222, sub_74CC) once helper coverage is complete.
 
 Workflow Reminders
 ------------------
 - Keep IDA running with the PGM BIOS IDB and the ida-pro-mcp plugin listening on port 13337.
-- Use the MCP client from repo root, e.g. python ida_mcp_client.py --port 13337 disassemble 0x0e10.
-- After writing each analysis file, append the function name here under "Completed" and adjust the TODO list to point at the next targets.
+- Use the MCP client from repo root, e.g. python ida_mcp_client.py --port 13337 disassemble 0x6F6A.
+- After writing each analysis file, append the function name here under "Completed" and refresh the TODO list.
 - Preserve ASCII encoding when updating docs.
 
 Open Questions
 --------------
-- Need to verify whether any helper relies on implicit global variables (BIOS RAM) that should be documented alongside the function description.
-- Identify whether any functions call into Z80 co-processor routines; note linkage when found.
+- Precise behaviour of helper math routines (division/remainder) to be captured when documenting sub_D874 / sub_D8D8 / sub_DA16.
+- Determine how and when the service menu initialises the character tables consulted by sub_6E72.

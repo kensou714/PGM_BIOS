@@ -1,0 +1,69 @@
+PGM BIOS Function: sub_1730 (Lookup With Pending-Index Check)
+-----------------------------------------------------------
+Summary: Queries an external status helper (sub_1910). When no pending work is reported it fetches a 32-bit value via sub_190C; if that value matches the caller-supplied index the routine immediately returns 1. Otherwise (for both the mismatch case and when sub_1910 indicates pending work) it looks up a 16-bit entry from a table at 0x801578 using a stride of six bytes per index and returns that value.
+
+Proposed prototype:
+    uint32_t pgm_lookup_entry(uint32_t index);
+
+Argument mapping:
+- arg_0 (D3): 32-bit index supplied by the caller.
+
+Associated helpers / data:
+- sub_1910: returns a status flag (0 = no pending work, non-zero = busy/ready).
+- sub_190C: fetches a 32-bit identifier associated with the most recent event.
+- nullsub_1: placeholder that currently does nothing (likely meant for logging).
+- Table at 0x801578: packed records, six bytes per entry; only the leading 16 bits are returned here.
+
+Assembly listing:
+```asm
+0x1730: movem.l d2-d3, -(sp)
+0x1734: move.l  8(sp), d3           ; index argument
+0x1738: jsr     sub_1910
+0x173c: nop
+0x173e: tst.l   d0
+0x1740: bne.s   0x175c              ; if busy, skip notification path
+0x1742: jsr     sub_190C            ; obtain pending index
+0x1746: nop
+0x1748: move.l  d0, d2
+0x174a: cmp.l   d3, d2
+0x174c: bne.s   0x1752
+0x174e: moveq   #1, d0              ; exact match
+0x1750: bra.s   0x1776              ; return 1
+0x1752: move.l  d2, -(sp)
+0x1754: jsr     nullsub_1           ; currently a no-op
+0x1758: nop
+0x175a: addq.l  #4, sp
+0x175c: move.w  d3, d0
+0x175e: move.w  d0, d1
+0x1760: add.w   d0, d0              ; d0 = index * 2
+0x1762: add.w   d1, d0              ; d0 = index * 3
+0x1764: add.w   d0, d0              ; d0 = index * 6
+0x1766: movea.l #0x801578, a0
+0x176c: move.w  (a0,d0.w), d0       ; fetch 16-bit entry
+0x1770: andi.l  #0xFFFF, d0
+0x1776: movem.l (sp)+, d2-d3
+0x177a: rts
+```
+
+Reconstructed C implementation:
+```c
+uint32_t pgm_lookup_entry(uint32_t index) {
+    if (sub_1910() == 0) {
+        uint32_t pending = sub_190C();
+        if (pending == index) {
+            return 1;                          /* special "ready" signal */
+        }
+        nullsub_1(pending);                    /* placeholder hook */
+    }
+
+    uint32_t offset = (index & 0xFFFF) * 6;    /* records are 6 bytes */
+    const uint16_t *table = (uint16_t *)0x801578;
+    return table[offset / 2];                  /* return leading 16 bits */
+}
+```
+
+Analysis notes:
+- The early-return of 1 suggests the function doubles as a poller for asynchronous operations; callers likely treat 1 as ?job complete?.
+- Table stride of six bytes hints each record may include multiple fields (e.g., 16-bit status + 32-bit pointer) that other routines consume.
+- `nullsub_1` currently does nothing; it may have been a debug stub in the original firmware. Its presence implies hooks for logging or callbacks.
+- Both helper calls (`sub_1910` / `sub_190C`) should be analysed to understand the surrounding subsystem. Keep an eye on how index values are produced to confirm the above interpretation.

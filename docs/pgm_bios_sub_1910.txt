@@ -1,0 +1,21 @@
+PGM BIOS Function: sub_1910 (Pending Flag Stub)
+----------------------------------------------
+Summary: Returns constant 1, acting as a placeholder for a routine that should test whether pending events exist.
+
+Assembly listing:
+```asm
+0x1910: moveq #1, d0
+0x1912: rts
+```
+
+Reconstructed C implementation:
+```c
+uint32_t pgm_pending_flag(void) {
+    return 1;
+}
+```
+
+Analysis notes:
+- Called before sub_190C in polling routines; a non-zero return signals the caller to fall back to table-based checks.
+- In this BIOS build it forces the fallback path, effectively disabling the fast-match early return.
+- When reconstructing more complete firmware expect this function to reflect hardware state (e.g., checking an interrupt latch or a queued flag).

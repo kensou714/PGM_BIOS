@@ -1,0 +1,23 @@
+PGM BIOS Helper: sub_DA16 (Ranking Block Compare)
+----------------------------------------------
+Summary: Compares two ranking data blocks for equality, accounting for alignment and structure layout. Returns 0 when the blocks match, or a non-zero difference otherwise.
+
+Parameters:
+- arg_0: pointer to block A.
+- arg_4: pointer to block B.
+
+Algorithm:
+1. Check pointer alignment and perform byte-by-byte comparison when unaligned or when block length < 4.
+2. For aligned regions, compares 32-bit words in a loop, with special handling for trailing bytes.
+3. Stops early once a mismatch is found; otherwise returns 0 to signal equality.
+
+Usage:
+- Called by `sub_5986` to see whether a ranking buffer in the pool matches the incoming data block.
+- Because it tolerates alignment differences, this helper is safe for both VRAM and RAM buffers.
+
+Pseudocode:
+```c
+int pgm_compare_blocks(const void *a, const void *b) {
+    return memcmp(a, b, len);  // len implied by stored structure terminators
+}
+```

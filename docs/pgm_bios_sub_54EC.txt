@@ -1,0 +1,79 @@
+PGM BIOS Function: sub_54EC (Find or Insert Ranking Entry ? Small Table)
+-----------------------------------------------------------------------
+Summary: Searches a compact ranking table for an entry matching the global course/difficulty identifiers. If a match is found, the function returns a pointer to that entry. Otherwise it shifts the table forward to make room, inserts a new entry at the front using the current global identifiers, clears its counters, and returns that slot.
+
+Parameters:
+- arg_0: pointer to the start of the table (each entry = 0x10 bytes).
+- arg_4 (`count`): number of entries to scan.
+- arg_8 (`strict`): when non-zero, the course/difficulty comparison also includes the 0x0F byte; otherwise only the 0x0C word and 0x0E byte are checked.
+
+Global identifiers (updated elsewhere prior to this call):
+- 0x802098 (word): course/stage identifier written to entry offset +0x0C.
+- 0x80209A (word): difficulty/region identifier mirrored in entry offset +0x0E (byte).
+- 0x80209B (byte): difficulty value written to new entries at +0x0E.
+- 0x80209C (word): variant/area identifier compared to entry byte +0x0F when `strict != 0`.
+- 0x80209D (byte): variant value written to new entries at +0x0F.
+
+Table layout (per entry, 0x10 bytes):
+- +0x00/+0x04/+0x08: 32-bit counters.
+- +0x0C: 16-bit course/stage code.
+- +0x0E: 8-bit difficulty code.
+- +0x0F: 8-bit variant/group.
+
+Algorithm overview:
+1. Iterate over `count` entries (loop at `loc_5502`). For each entry where the word at +0x0C is not 0xFFFF:
+   - If `strict != 0`: require byte +0x0F, byte +0x0E, and word +0x0C to match the current globals.
+   - If `strict == 0`: require only byte +0x0E and word +0x0C to match.
+   - On success, return the entry pointer immediately.
+2. If the scan completes without a match (`loc_5570`), perform a left shift of the table by one slot:
+   - Call `sub_545E(table_base, entry_size=0x10, count)`, which moves blocks [0..count-2] ? [1..count-1].
+3. Populate the first entry with the current identifiers:
+   - `entry->course = *0x802098`
+   - `entry->difficulty = *0x80209B`
+   - `entry->variant = *0x80209D`
+   - Clear the three 32-bit counters at offsets +0x00/+0x04/+0x08.
+4. Return the pointer to this newly initialised entry.
+
+Reconstructed C-style implementation:
+```c
+void *pgm_ranking_find_small(void *table_base, uint32_t count, bool strict) {
+    struct entry { uint32_t a, b, c; uint16_t course; uint8_t difficulty; uint8_t variant; };
+    struct entry *slots = table_base;
+
+    uint16_t course = *(uint16_t *)0x802098;
+    uint8_t  diff   = *(uint8_t  *)0x80209B;
+    uint8_t  variant = *(uint8_t *)0x80209D;
+    uint16_t cur_course_word = *(uint16_t *)0x80209A;  /* comparison value */
+    uint16_t cur_variant_word = *(uint16_t *)0x80209C; /* used when strict */
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (slots[i].course == 0xFFFF) {
+            continue;
+        }
+        bool match = (slots[i].difficulty == *(uint8_t *)0x80209A) &&
+                     (slots[i].course == course);
+        if (strict) {
+            match &= (slots[i].variant == *(uint8_t *)0x80209C);
+        }
+        if (match) {
+            return &slots[i];
+        }
+    }
+
+    sub_545E(table_base, 0x10, count);  /* shift entries forward */
+
+    slots[0].course     = course;
+    slots[0].difficulty = diff;
+    slots[0].variant    = variant;
+    slots[0].a = slots[0].b = slots[0].c = 0;
+
+    return &slots[0];
+}
+```
+
+Analysis notes:
+- Entries with `course == 0xFFFF` are treated as empty slots. The caller must seed this field accordingly when freeing entries.
+- The `strict` flag is typically set when the caller wants an exact match on variant and difficulty; otherwise the routine only cares about course/difficulty.
+- `sub_545E` provides memmove semantics for fixed-size records; see its documentation for details.
+- Globals at 0x802098/0x80209A-0x80209D act as staging registers: the caller populates them before invoking this function.
+- The routine returns a pointer regardless of whether it matched an existing entry or created a new one, allowing the caller to update counters immediately.

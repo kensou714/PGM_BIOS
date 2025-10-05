@@ -1,0 +1,59 @@
+PGM BIOS Function: sub_F8A (Release Timer Slot)
+----------------------------------------------
+Summary: Returns a timer slot to the BIOS pool by writing 0xFFFFFFFF back to the table at 0x801550 and decrementing the active-timer counter at 0x801560. Raises a diagnostic through sub_7FCC when the supplied index is out of range.
+
+Proposed prototype:
+    void pgm_bios_timer_release(int index);
+
+Argument mapping:
+- arg_0 (D2): timer slot index (expected 0?3).
+
+Global state involved:
+- (uint32_t *)0x801550: timer descriptor table populated by sub_F40.
+- (uint8_t  *)0x801560: active timer count decremented here.
+- 0x12d8c / 0x12daa / 0x002e: string bundle supplied to sub_7FCC for error reporting.
+
+Assembly listing:
+```asm
+0x0f8a: move.l d2, -(sp)
+0x0f8c: move.l 4+arg_0(sp), d2
+0x0f90: tst.l  d2
+0x0f92: blt.s  0x0f9a                ; negative index -> warn
+0x0f94: moveq  #4, d0
+0x0f96: cmp.l  d2, d0
+0x0f98: bgt.s  0x0fb4               ; index < 4? continue
+0x0f9a: pea    (0x002e).w
+0x0f9e: pea    (0x12daa).l
+0x0fa4: pea    (0x12d8c).l
+0x0faa: jsr    (sub_7FCC).l         ; BIOS diagnostics helper
+0x0fb4: move.w d2, d0
+0x0fb6: lsl.w  #2, d0               ; offset = index * 4
+0x0fb8: moveq  #-1, d1
+0x0fba: movea.l #0x801550, a0
+0x0fc0: move.l d1, (a0,d0.w)        ; mark slot as free
+0x0fc4: subq.b #1, (0x801560).l     ; decrement active counter
+0x0fca: move.l (sp)+, d2
+0x0fcc: rts
+```
+
+Reconstructed C implementation:
+```c
+void pgm_bios_timer_release(int index) {
+    volatile uint32_t *const timer_slots = (uint32_t *)0x801550;
+    volatile uint8_t  *const timer_count = (uint8_t  *)0x801560;
+
+    if (index < 0 || index >= 4) {
+        sub_7FCC("Handle %0 handle map", "C Imer C", 0x2E);
+        /* BIOS still falls through, so invalid indices will corrupt memory. */
+    }
+
+    timer_slots[index] = 0xFFFFFFFFu;
+    (*timer_count)--;
+}
+```
+
+Analysis notes:
+- Saves/restores D2; other registers are scratch, so callers must preserve any needed state beforehand.
+- Diagnostic path does not abort; firmware authors likely relied on development builds where sub_7FCC halts execution. Treat invalid indices as fatal when porting logic.
+- Must pair with sub_F40 allocations to avoid counter underflow at 0x801560.
+- Consider wrapping access with bounds checks when re-implementing BIOS behaviour in high-level code.

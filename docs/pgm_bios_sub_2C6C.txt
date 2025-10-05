@@ -1,0 +1,32 @@
+PGM BIOS Function: sub_2C6C (Reset Fade Timing Flags)
+----------------------------------------------------
+Summary: Iterates over four entries in the table at 0x802058 (stride 0x10 bytes) and clears the first byte of each entry. Likely resets per-fade timing status before scheduling new transitions.
+
+Assembly listing:
+`sm
+0x2c6c: moveq  #0, d1
+0x2c6e: move.w d1, d0
+0x2c70: lsl.w  #4, d0               ; offset = index * 0x10
+0x2c72: movea.l #0x802058, a0
+0x2c78: clr.b  (a0,d0.w)
+0x2c7c: addq.l #1, d1
+0x2c7e: moveq  #4, d0
+0x2c80: cmp.l  d1, d0
+0x2c82: bgt.s  0x2c6e
+0x2c84: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_fade_timing_reset(void) {
+    uint8_t *table = (uint8_t *)0x802058;
+    for (int i = 0; i < 4; ++i) {
+        table[i * 0x10] = 0;
+    }
+}
+`
+
+Analysis notes:
+- Simple helper used by higher-level initialisation (see sub_3054).
+- Suggests each fade slot has a corresponding timing/control entry at 0x802058 with 0x10-byte records.
+- No dependencies or side effects beyond clearing the flags.

@@ -1,0 +1,54 @@
+PGM BIOS Function: sub_1012 (Read Timer Slot)
+--------------------------------------------
+Summary: Validates a timer slot index and returns the 32-bit value stored in the BIOS timer table at 0x801550. Emits a diagnostic message via sub_7FCC when the index is out of bounds.
+
+Proposed prototype:
+    uint32_t pgm_bios_timer_read(int index);
+
+Argument mapping:
+- arg_0 (D2): timer slot index expected in the range [0, 3].
+
+Global state involved:
+- (uint32_t *)0x801550: shared timer descriptor table written by sub_104E / sub_F40.
+- Diagnostic strings at 0x12db4 / 0x12dd2 / 0x0046 forwarded to sub_7FCC when index validation fails.
+
+Assembly listing:
+```asm
+0x1012: move.l d2, -(sp)
+0x1014: move.l 4+arg_0(sp), d2
+0x1018: tst.l  d2
+0x101a: blt.s  0x1022                ; negative index -> warn
+0x101c: moveq  #4, d0
+0x101e: cmp.l  d2, d0
+0x1020: bgt.s  0x103c               ; index < 4? continue
+0x1022: pea    (0x0046).w
+0x1026: pea    (0x12dd2).l
+0x102c: pea    (0x12db4).l
+0x1032: jsr    (sub_7FCC).l         ; BIOS diagnostics helper
+0x103c: move.w d2, d0
+0x103e: lsl.w  #2, d0               ; offset = index * 4
+0x1040: movea.l #0x801550, a0
+0x1046: move.l (a0,d0.w), d0        ; fetch slot contents
+0x104a: move.l (sp)+, d2
+0x104c: rts
+```
+
+Reconstructed C implementation:
+```c
+uint32_t pgm_bios_timer_read(int index) {
+    volatile uint32_t *const timer_slots = (uint32_t *)0x801550;
+
+    if (index < 0 || index >= 4) {
+        sub_7FCC("Handle %0 handle map", "C Imer C", 0x46);
+        /* BIOS still continues, so callers must avoid bad indices. */
+    }
+
+    return timer_slots[index];
+}
+```
+
+Analysis notes:
+- Preserves D2 which carries the incoming index; other registers are scratch.
+- Shares the same validation + logging pattern seen in sub_F8A and sub_104E, confirming the timer subsystem uses common diagnostics.
+- Return value is whatever 32-bit payload the slot currently holds (0 for newly allocated entries, function pointers or state during active operation).
+- Higher-level code should treat invalid indices as fatal despite BIOS continuing execution; otherwise the computed offset may wrap and read unrelated memory.

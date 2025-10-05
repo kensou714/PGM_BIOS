@@ -1,0 +1,40 @@
+PGM BIOS Function: sub_2280 (Palette Slot Ready Test)
+---------------------------------------------------
+Summary: Checks the auxiliary status word for a palette slot. Returns 1 when the slot is ready (status word == 0) and 0 when it is pending/non-zero.
+
+Argument mapping:
+- arg_2: slot index (lower 16 bits used).
+
+Data structure:
+- Table at 0x801EE6: array of uint16_t status values, one per slot, spaced every 12 bytes to mirror the descriptor layout.
+
+Assembly listing:
+`sm
+0x2280: move.w  6(sp), d0
+0x2284: move.w  d0, d1
+0x2286: add.w   d0, d0
+0x2288: add.w   d1, d0
+0x228a: lsl.w   #2, d0              ; offset = index * 12
+0x228c: movea.l #0x801EE6, a0
+0x2292: tst.w   (a0,d0.w)
+0x2296: beq.s   0x229c              ; zero -> ready
+0x2298: moveq   #0, d0              ; busy
+0x229a: bra.s   0x229e
+0x229c: moveq   #1, d0              ; ready
+0x229e: rts
+`
+
+Reconstructed C implementation:
+`c
+int pgm_palette_slot_ready(int index) {
+    const volatile uint16_t *status_table = (uint16_t *)0x801EE6;
+    uint16_t status = status_table[(index * 12) / 2];
+    return (status == 0) ? 1 : 0;
+}
+`
+
+Analysis notes:
+- Used as the polling step in sub_22A0 to wait until a slot completes processing.
+- A zero status indicates the hardware or another BIOS routine has finished updating the palette entry.
+- Shares the same 12-byte stride as other palette helpers, further confirming table alignment.
+- No index validation; caller must ensure the argument matches a previously allocated slot.

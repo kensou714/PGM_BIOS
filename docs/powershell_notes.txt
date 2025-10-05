@@ -1,0 +1,15 @@
+PowerShell Quoting Note (2025-10-05)
+====================================
+
+Problem
+-------
+Embedding complex Python one-liners (with quotes or square brackets) directly in PowerShell, e.g. `python -c "... entry['address'] ..."`, triggers PowerShell parser errors (`ParameterBindingException`, `ParserError`). PowerShell tries to interpret the inner text before Python runs.
+
+Fix
+---
+- Write the Python snippet to a temporary script (e.g. `docs/tmp_script.py`) using a here-string, then execute it (`python docs/tmp_script.py`).
+- Alternatively call Python via a `.py` helper committed in the repo and pass arguments instead of inline code.
+
+Guideline
+---------
+Whenever the command line needs quotes, f-strings, or indexing syntax, prefer the temp-script approach to avoid repeated quoting mistakes.

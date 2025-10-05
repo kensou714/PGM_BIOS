@@ -1,0 +1,42 @@
+PGM BIOS Function: sub_3798 (Display UI Prompt Strings)
+------------------------------------------------------
+Summary: Pushes a series of parameters and string pointers before invoking the text rendering routine sub_6E72 twice. The displayed messages correspond to UI prompts ("A Button Next Page", "B Button Exit"), likely shown on a diagnostics or service screen.
+
+Call arguments (per sub_6E72 invocation):
+- Stack layout appears to be: [string_ptr][unused 0][height?][x][y][unused]
+- First call shows text at coordinates (0x18, 0x0A) with height 3.
+- Second call shows text at coordinates (0x1A, 0x0A) with height 3.
+
+Assembly listing:
+`sm
+0x3798: pea    (0x134E4).l          ; "A Button Next Page"
+0x379e: clr.l  -(sp)
+0x37a0: pea    (3).w
+0x37a4: pea    (0x18).w
+0x37a8: pea    (0x0A).w
+0x37ac: clr.l  -(sp)
+0x37ae: jsr    (sub_6E72).l
+0x37b4: pea    (0x134FC).l          ; "B Button Exit"
+0x37ba: clr.l  -(sp)
+0x37bc: pea    (3).w
+0x37c0: pea    (0x1A).w
+0x37c4: pea    (0x0A).w
+0x37c8: clr.l  -(sp)
+0x37ca: jsr    (sub_6E72).l
+0x37d0: lea    0x30(sp), sp
+0x37d4: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_draw_prompt_strings(void) {
+    sub_6E72(0, 0x0A, 0x18, 3, 0, "A Button Next Page");
+    sub_6E72(0, 0x0A, 0x1A, 3, 0, "B Button Exit");
+}
+`
+
+Analysis notes:
+- Demonstrates typical calling convention for sub_6E72 (UI text renderer). Investigate that routine to confirm parameter order (likely spacing, colour, etc.).
+- Hard-coded string pointers (0x134E4/0x134FC) reside in ROM text table.
+- No state preserved; purely side-effect is drawing text.
+- Clearing longwords before pushes suggests optional arguments (colour palette, style) default to zero.

@@ -1,0 +1,63 @@
+PGM BIOS Function: sub_5986 (Locate or Allocate Ranking Buffer Set)
+------------------------------------------------------------------
+Summary: Manages a pool of eight ranking buffer sets stored at 0x8021CE. Each set occupies 0x230 bytes and begins with a sentinel byte. The routine scans for a buffer whose sentinel is 0xFE and whose contents `sub_DA16` validates against the caller-provided block. If it finds a match, it returns that buffer pointer. Otherwise it shifts the pool to make room, wipes the oldest entry, copies the caller data into a freshly cleared buffer, tags it with 0xFE, and returns the new slot.
+
+Parameters:
+- arg_0: pointer to a ranking data block that should be compared/copied into the pool.
+
+Pool layout:
+- Base address: 0x8021CE. Each element is 0x230 bytes.
+- The first byte acts as a sentinel (0xFE means the slot is initialised and in use).
+- Subsequent bytes hold serialised ranking data copied from `arg_0`.
+
+Global helpers:
+- `sub_DA16(buf, src)` performs validation/ comparison of a serialized block; returns zero when the slot matches the requested data.
+- `sub_545E(base, element_size=0x230, count=8)` shifts buffers forward to make room for insertion.
+- `sub_4076` clears ranking statistics at a given buffer pointer (called after shifting to reset the new slot).
+
+Algorithm:
+1. Initialise `a2 = 0x8021CE`, `d3 = 0`, and repeat for up to eight entries (loop at `loc_59BE`).
+2. For each buffer whose sentinel byte is 0xFE:
+   - Call `sub_DA16(buffer + 1, arg_0)`. If it returns 0, the buffer matches and the routine returns the buffer pointer immediately.
+   - Otherwise, increment the counter and advance `a2` by 0x230 to examine the next slot.
+3. If no match is found after eight slots (`loc_59C2` path):
+   - Call `sub_545E(0x8021CE, 0x230, 8)` to shift the pool upward.
+   - Call `sub_4076(0x8021CE)` to clear the newly vacated head slot (resets ranking tables inside the buffer).
+4. Copy the caller?s block into the first slot:
+   - Perform a byte copy from `arg_0` to `0x8021CF` until the source terminates with 0x00 (strings) or the copy hits the record size.
+   - Set the sentinel byte at 0x8021CE to 0xFE.
+5. Return `0x8021CE` (pointer to the prepared buffer).
+
+Reconstructed C-style pseudocode:
+```c
+void *pgm_ranking_pool_acquire(const void *blob) {
+    uint8_t *slot = (uint8_t *)0x8021CE;
+
+    for (int i = 0; i < 8; ++i, slot += 0x230) {
+        if (slot[0] != 0xFE) {
+            continue;
+        }
+        if (sub_DA16(slot + 1, blob) == 0) {
+            return slot;
+        }
+    }
+
+    sub_545E((void *)0x8021CE, 0x230, 8);
+    sub_4076((void *)0x8021CE);
+
+    uint8_t *dst = (uint8_t *)0x8021CF;
+    const uint8_t *src = blob;
+    while ((*dst++ = *src++) != 0) {
+        ; /* copy until terminator */
+    }
+    *(uint8_t *)0x8021CE = 0xFE;
+    return (void *)0x8021CE;
+}
+```
+
+Analysis notes:
+- The pool behaves like an MRU cache: unmatched requests push older entries toward the end, while the newest block occupies the head.
+- `sub_4076` is reused here to zero the ranking statistics embedded inside each buffer, ensuring copies start from a clean state.
+- The copy loop stops on a zero byte; the stored block likely contains a structure whose string portion is zero-terminated.
+- Matching relies on `sub_DA16`; once that helper is documented the exact comparison criteria will be clearer (checksum, version, etc.).
+- The sentinel byte (0xFE) both marks occupancy and acts as a quick filter before running the heavier comparison routine.

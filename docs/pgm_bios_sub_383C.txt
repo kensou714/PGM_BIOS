@@ -1,0 +1,102 @@
+PGM BIOS Function: sub_383C (Render Meter Table Page)
+----------------------------------------------------
+Summary: Drives the service-mode accounting table. Iterates over multiple counters, formats each one with sub_7F6A, and renders the value at the proper grid location via sub_7932. It also spawns secondary rows with sub_37D6 when more than one numeric field belongs to the same entry.
+
+Parameters (deduced from register setup):
+- arg_0 (d2 initial): leftmost column index (tile X coordinate accumulator).
+- arg_4 (d4): pointer to the packed counter data used by sub_7932.
+- arg_8 (a2): pointer to an array of 16-bit widths; each iteration consumes one entry to advance the X cursor.
+- arg_C (d5): number of entries (0-based last index).
+- arg_10 (d6): column selector / formatting mode.
+- arg_16 (word): comparison threshold used when d6 != 0 to switch formatting.
+
+Key behaviour:
+1. Outer loop (loc_396E) walks d3 from 0 up to d5, consuming one 16-bit slot width from 2 per iteration and accumulating the rendering X offset in d2.
+2. A tree of conditionals (starting at loc_385E, loc_389C, loc_38DE, etc.) selects the parameter preset for sub_7F6A/sub_7932. These presets control tile height, spacing, and palette depending on:
+   - Whether this is the first column (d3 == 0).
+   - Whether d3 matches the highlighted index d5.
+   - Whether the current column equals rg_10 or rg_16 (used to emphasise totals or selected columns).
+3. After choosing the preset, execution falls through loc_391C where:
+   - sub_7F6A(?, unk_0x500, ?) converts the numeric value into glyph tiles.
+   - sub_7932 is called with the generated sprite, the running X position (d2), the data pointer (d4), and layout descriptor unk_18514 to draw the entry.
+4. If the current column is not the highlighted summary column (d3 != d5), the routine also calls sub_37D6 with the slot width and current X position to draw additional rows (labels/secondary counters).
+5. At the end of each iteration the slot width (a2) is added to d2, the loop index d3 increments, and the pointer 2 advances by two bytes to the next width entry.
+
+Assembly slice (core loop):
+`sm
+0x385e: loc_385E:
+        tst.w  d6
+        bne.s  loc_389C          ; alternate formatting paths
+        tst.l  d3
+        bne.s  loc_3876
+        pea    (1).w             ; default column style
+        pea    (1).w
+        clr.l  -(sp)
+        clr.l  -(sp)
+        bra.w  loc_391C
+...
+0x391c: loc_391C:
+        pea    (0x500).w         ; tile buffer template
+        clr.l  -(sp)
+        jsr    (sub_7F6A).l
+        addq.l #8, sp
+        move.l d0, -(sp)
+        pea    (6).w             ; text width
+        clr.l  -(sp)             ; attributes
+        clr.l  -(sp)
+        pea    (unk_18514).l     ; layout table
+        move.l d4, -(sp)
+        move.l d2, -(sp)         ; X position accumulator
+        clr.l  -(sp)
+        jsr    (sub_7932).l
+        lea    0x30(sp), sp
+        addq.l #1, d2            ; advance X for next column
+...
+0x3954: move.w (a2), d0         ; slot width
+        move.l d0, -(sp)
+        move.l d4, -(sp)
+        move.l d2, -(sp)
+        bsr.w  sub_37D6          ; render secondary rows
+        lea    0x0C(sp), sp
+        move.w (a2), d0
+        add.l  d0, d2            ; accumulate width
+0x396a: loc_396A:
+        addq.l #1, d3
+        addq.l #2, a2            ; next slot width
+0x396e: loc_396E:
+        move.w d5, d0
+        addq.l #1, d0
+        cmp.l  d3, d0
+        bgt.w  loc_385E          ; continue loop
+`
+
+Reconstructed C-style pseudocode:
+`c
+void pgm_render_meter_table(uint32_t start_x,
+                            const void *value_table,
+                            const uint16_t *column_widths,
+                            uint32_t highlight_index,
+                            uint16_t mode,
+                            uint16_t mode_bound) {
+    uint32_t x = start_x;
+
+    for (uint32_t column = 0; column <= highlight_index; ++column, column_widths++) {
+        const uint16_t width = *column_widths;
+
+        PalettePreset preset = select_preset(mode, mode_bound, column, highlight_index);
+        const void *digits = sub_7F6A(preset.tile_buf, preset.flags, 0x500, preset.color);
+        sub_7932(preset.attrs, x, value_table, (void *)0x18514, preset.font, 0, 6, digits);
+
+        if (column != highlight_index) {
+            sub_37D6(x, value_table, width);   /* draw subordinate rows */
+            x += width;
+        }
+    }
+}
+`
+
+Analysis notes:
+- The complex tree of pea instructions encodes static presets (font id, spacing, foreground/background selection) chosen according to column index and mode. Capturing these presets will help when recreating the service UI layout.
+- column_widths supplies the horizontal advance for each column; the 16-bit values likely come from a ROM table describing the column structure of the accounting screen.
+- Subroutine calls to sub_37D6 within the loop confirm that each column can contain multiple stacked numbers (e.g., coin-in/coin-out per slot).
+- Additional helper loc_3984 (invoked by sub_3E3C) probably handles header rendering; capturing its behaviour next will complete the service menu reconstruction.

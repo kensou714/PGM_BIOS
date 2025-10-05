@@ -1,0 +1,73 @@
+PGM BIOS Function: sub_545E (Shift Ordered Blocks)
+--------------------------------------------------
+Summary: Shifts a sequence of fixed-size blocks forward by one slot inside a table. The routine uses `sub_D80A` to translate element indices into byte offsets relative to a base pointer and performs a `memmove`-style copy working from the tail toward the head. It is employed when removing an entry from an ordered list so the following records collapse into the vacated slot.
+
+Arguments:
+- arg_0: base pointer to the table (`a2`).
+- arg_4 (`d3`): element size in bytes. A value of zero triggers a diagnostic via `sub_7FCC`.
+- arg_8 (`d4`): number of occupied elements. Values ? 1 trigger a diagnostic via `sub_7FCC`.
+
+Algorithm:
+1. Validate `element_size > 0` and `element_count > 1`. Diagnostic strings (`"Size=0"`, `"TotalGroup<=1"`) are emitted but the routine still proceeds.
+2. Initialise `d2 = element_count - 2`; each iteration copies the block at index `d2` into index `d2 + 1` until all preceding elements have been shifted.
+3. For each index `i`:
+   - `src = base + sub_D80A(element_size, i)`
+   - `dst = base + sub_D80A(element_size, i + 1)`
+   - Copy `element_size` bytes from `src` to `dst` byte-by-byte.
+
+Relevant assembly snippet:
+```asm
+0x548c: moveq  #1, d0
+0x548e: cmp.l  d4, d0
+0x5490: blt.s  loc_54AC            ; require count > 1
+...
+0x54ac: move.l d4, d2
+0x54ae: subq.l #2, d2              ; start at last-1 index
+0x54b2: move.l d3, d0
+0x54b4: move.l d0, -(sp)
+0x54b6: move.l d2, d0
+0x54b8: move.l d3, d1
+0x54ba: jsr    sub_D80A            ; offset for element i
+0x54c0: add.l  a2, d0
+0x54c2: move.l d0, -(sp)           ; stash source pointer
+0x54c4: move.l d2, d0
+0x54c6: addq.l #1, d0
+0x54c8: move.l d3, d1
+0x54ca: jsr    sub_D80A            ; offset for element i+1
+0x54d0: add.l  a2, d0
+0x54d2: movea.l d0, a1             ; dst
+0x54d4: movea.l (sp)+, a0          ; src
+0x54d6: move.l (sp)+, d1           ; copy length (element_size)
+0x54da: move.b (a0)+, (a1)+
+0x54dc: subq.l #1, d1
+0x54de: bge.s  0x54DA              ; copy element_size bytes
+0x54e0: subq.l #1, d2
+0x54e2: tst.l  d2
+0x54e4: bge.s  0x54B2              ; next element up the chain
+```
+
+Reconstructed C implementation:
+```c
+void pgm_shift_blocks(void *base, uint32_t element_size, uint32_t element_count) {
+    if (element_size == 0) {
+        sub_7FCC("Size=0", "C OO k C", 0x38E);
+    }
+    if (element_count <= 1) {
+        sub_7FCC("TotalGroup<=1", "C OO k C", 0x38F);
+    }
+
+    for (int32_t idx = (int32_t)element_count - 2; idx >= 0; --idx) {
+        uint8_t *src = (uint8_t *)base + sub_D80A(element_size, idx);
+        uint8_t *dst = (uint8_t *)base + sub_D80A(element_size, idx + 1);
+        for (uint32_t i = 0; i < element_size; ++i) {
+            dst[i] = src[i];
+        }
+    }
+}
+```
+
+Analysis notes:
+- `sub_D80A(size, index)` is a helper that converts an element index into a byte offset relative to `base` (likely `index * size` or similar with banked addressing). Its behaviour should be documented when that routine is analysed.
+- The backward iteration ensures overlapping regions are handled safely, emulating `memmove` semantics.
+- Diagnostics leverage the common BIOS warning routine `sub_7FCC`; these strings hint that the caller should provide at least two elements when invoking the function.
+- Useful when reverse-engineering list operations (e.g., ranking removal) to see how entries are compacted.

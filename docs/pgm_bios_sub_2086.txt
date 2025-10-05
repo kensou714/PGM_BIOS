@@ -1,0 +1,56 @@
+PGM BIOS Function: sub_2086 (Palette Slot Allocator)
+---------------------------------------------------
+Summary: Searches the palette job table at 0x801EDC for a free slot, clears its delay counter, marks it active, increments the outstanding-slot counter at 0x801F0C, and returns the slot index. When no slots are available it logs an error through sub_8120 and returns 4 as a failure sentinel.
+
+Data structures:
+- Base table: struct palette_slot slots[4] at 0x801EDC, each entry 0x0C bytes.
+  * +0: uint8_t state (0 = free, 1 = allocated by sub_2086, 2 = populated by sub_21AC).
+  * +0x0A: uint16_t delay cleared on allocation.
+- Global counter: (uint8_t *)0x801F0C tracks active palette slots.
+
+Assembly listing:
+`sm
+0x2086: moveq  #0, d1               ; slot index
+0x2088: movea.l #0x801EDC, a0      ; table base
+0x208e: bra.s  0x20ac
+0x2090: tst.b  (a0)                ; state byte
+0x2092: bne.s  0x20a6              ; occupied -> next slot
+0x2094: clr.w  0x0a(a0)            ; reset delay
+0x2098: move.b #1, (a0)            ; mark allocated
+0x209c: addq.b #1, (0x801F0C).l    ; bump counter
+0x20a2: move.l d1, d0              ; return slot index
+0x20a4: bra.s  0x20c0
+0x20a6: addq.l #1, d1
+0x20a8: moveq  #0x0c, d0
+0x20aa: adda.l d0, a0              ; advance to next entry
+0x20ac: moveq  #4, d0
+0x20ae: cmp.l  d1, d0
+0x20b0: bgt.s  0x2090              ; loop over 4 slots
+0x20b2: pea     (0x13454).l        ; "Palette use" message
+0x20b8: jsr     sub_8120
+0x20c0: rts
+`
+
+Reconstructed C implementation:
+`c
+int pgm_palette_slot_alloc(void) {
+    struct palette_slot *slot = (struct palette_slot *)0x801EDC;
+
+    for (int index = 0; index < 4; ++index, ++slot) {
+        if (slot->state == 0) {
+            slot->delay = 0;
+            slot->state = 1;
+            (*(volatile uint8_t *)0x801F0C)++;
+            return index;
+        }
+    }
+
+    sub_8120("Palette use");
+    return 4;  /* failure sentinel */
+}
+`
+
+Analysis notes:
+- Allocator supports only four concurrent palette operations; failure path mirrors the timer allocator pattern.
+- State transitions likely progress from 1 (allocated) to 2 when sub_21AC populates parameters.
+- Counter at 0x801F0C must be decremented elsewhere (not yet analysed); watch for balance when reviewing release logic.

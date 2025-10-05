@@ -1,0 +1,49 @@
+PGM BIOS Function: sub_21AC (Populate Palette Slot)
+-------------------------------------------------
+Summary: Writes parameters into a palette job slot selected by index and flags the entry as ready (state = 2).
+
+Argument mapping (68K stack):
+- arg_0: slot index (0?3).
+- arg_4: 32-bit parameter stored at offset +0x02 (likely source pointer or color data address).
+- arg_8: 32-bit parameter stored at offset +0x06.
+- arg_E: 16-bit parameter stored at offset +0x0A (delay or count).
+
+Data layout (per slot, 0x0C bytes at 0x801EDC + index*0x0C):
+- +0x00: uint8_t state (0 = free, 1 = allocated, 2 = ready for processing).
+- +0x02: uint32_t param0.
+- +0x06: uint32_t param1.
+- +0x0A: uint16_t delay.
+
+Assembly listing:
+`sm
+0x21ac: move.l  0x04(sp), d0
+0x21b0: move.l  d0, d1
+0x21b2: add.l   d0, d0
+0x21b4: add.l   d1, d0
+0x21b6: lsl.l   #2, d0              ; offset = index * 12
+0x21b8: movea.l #0x801EDC, a0
+0x21be: adda.l  d0, a0
+0x21c0: movea.l a0, a1
+0x21c2: move.l  0x0c(sp), 6(a1)     ; param1
+0x21c8: move.l  0x08(sp), 2(a1)     ; param0
+0x21ce: move.w  0x12(sp), 0x0a(a1)  ; delay
+0x21d4: move.b  #2, (a1)            ; mark ready
+0x21d8: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_slot_config(int index, uint32_t param0, uint32_t param1, uint16_t delay) {
+    uint8_t *base = (uint8_t *)0x801EDC + index * 12;
+
+    *(uint32_t *)(base + 2) = param0;
+    *(uint32_t *)(base + 6) = param1;
+    *(uint16_t *)(base + 10) = delay;
+    base[0] = 2;  /* ready for processing */
+}
+`
+
+Analysis notes:
+- Assumes the slot has already been allocated via sub_2086 (state = 1). After configuration, state transitions to 2, signalling downstream code to process the job.
+- Offsets match the layout inferred from sub_2086 and future routines should consume these fields when executing palette updates.
+- No bounds checking; callers must supply a valid index.

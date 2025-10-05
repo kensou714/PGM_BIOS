@@ -1,0 +1,68 @@
+PGM BIOS Function: sub_2466 (Fade Slot Allocator)
+-----------------------------------------------
+Summary: Scans the fade-effect job table at 0x801F0E for a free slot, reserves it via the palette slot allocator, and returns the fade slot index. On exhaustion it logs an error through sub_8120.
+
+Data layout (per fade slot, 0x52 bytes at 0x801F0E):
+- +0x00: state byte (0 = free, 1 = allocated, 3 = active fade, etc.).
+- +0x02: dword parameters (cleared on allocation).
+- +0x0A: byte flag cleared on allocation.
+- +0x0B: palette slot index returned by sub_2086.
+- +0x?: additional parameters populated by sub_250A.
+
+Globals:
+- 0x802056: active fade slot counter (incremented on allocation, decremented on release in sub_27B0).
+
+Assembly listing:
+`sm
+0x2466: movem.l d2/a2, -(sp)
+0x246a: movea.l #0x801F0E, a2
+0x2470: moveq   #0, d2               ; slot index
+0x2472: tst.b   (a2)
+0x2474: bne.s   0x2496               ; slot in use -> next
+0x2476: clr.l   2(a2)
+0x247a: clr.b   0x0A(a2)
+0x247e: jsr     (sub_2086).l         ; allocate palette slot
+0x2484: move.b  d0, 0x0B(a2)         ; remember palette slot index
+0x2488: move.b  #1, (a2)             ; mark fade slot allocated
+0x248c: addq.b  #1, (0x802056).l     ; increment active fade count
+0x2492: move.l  d2, d0               ; return fade slot index
+0x2494: bra.s   0x24B0
+0x2496: addq.l  #1, d2
+0x2498: moveq   #0x52, d0
+0x249a: adda.l  d0, a2               ; next slot
+0x249c: moveq   #4, d0
+0x249e: cmp.l   d2, d0
+0x24a0: bgt.s   0x2472
+0x24a2: pea     (0x13460).l          ; "Fade use" message
+0x24a8: jsr     sub_8120
+0x24b0: movem.l (sp)+, d2/a2
+0x24b4: rts
+`
+
+Reconstructed C implementation:
+`c
+int pgm_fade_slot_alloc(void) {
+    uint8_t *slot = (uint8_t *)0x801F0E;
+
+    for (int index = 0; index < 4; ++index, slot += 0x52) {
+        if (slot[0] == 0) {
+            *(uint32_t *)(slot + 2) = 0;
+            slot[0x0A] = 0;
+            int pal_slot = pgm_palette_slot_alloc();
+            slot[0x0B] = (uint8_t)pal_slot;
+            slot[0] = 1;
+            (*(volatile uint8_t *)0x802056)++;
+            return index;
+        }
+    }
+
+    sub_8120("Fade use");
+    return 4;  /* failure sentinel */
+}
+`
+
+Analysis notes:
+- Bridges the palette queue (sub_2086) with higher-level fade effects stored in a larger descriptor.
+- Ensures slot bookkeeping is reset before use (clears parameters and flags).
+- Counter at 0x802056 mirrors the fade slot occupancy; sub_27B0 decrements it during release.
+- Like other allocators, it lacks error handling after logging; upstream code should check for return value >= 4.

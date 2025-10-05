@@ -1,0 +1,87 @@
+PGM BIOS Function: sub_1188 (Timer Job Dispatcher)
+-----------------------------------------------
+Summary: Allocates a timer slot, stores a 32-bit job descriptor into the timer table, optionally invokes a polling callback while the slot remains active, then releases the slot. Returns 1 when the callback reports completion, otherwise 0.
+
+Proposed prototype:
+    int pgm_bios_timer_dispatch(uint32_t descriptor, int (*poll_cb)(void));
+
+Argument mapping:
+- arg_0: 32-bit descriptor written into the timer table (could be a pointer or bitfield consumed elsewhere).
+- arg_4 (A2): optional callback pointer; may be NULL to indicate pure busy-wait.
+
+Global state + helpers:
+- sub_F40: allocates a timer slot, returning index in D0.
+- sub_104E: writes the descriptor into the timer table.
+- sub_1012: reads the current slot value to test whether the job is still pending.
+- sub_F8A: releases the timer slot and decrements the active counter.
+
+Assembly listing:
+```asm
+0x1188: link   a6, #0
+0x118c: movem.l d2-d3/a2, -(sp)
+0x1190: movea.l arg_4(a6), a2       ; poll callback (can be NULL)
+0x1194: moveq  #0, d3               ; default return = 0
+0x1196: bsr.w  sub_F40              ; allocate timer slot
+0x119a: move.l d0, d2               ; remember slot index
+0x119c: move.l arg_0(a6), -(sp)
+0x11a0: move.l d2, -(sp)
+0x11a2: bsr.w  sub_104E             ; write descriptor into slot
+0x11a6: addq.l #8, sp
+
+; Loop until slot clears, invoking callback when provided.
+0x11a8: move.l a2, d0               ; callback present?
+0x11aa: beq.s  0x11b6               ; skip call when NULL
+0x11ac: jsr    (a2)                 ; invoke poll callback
+0x11ae: tst.l  d0
+0x11b0: beq.s  0x11b6               ; continue polling if it returned 0
+0x11b2: moveq  #1, d3               ; callback signalled completion
+0x11b4: bra.s  0x11c2               ; exit loop
+
+0x11b6: move.l d2, -(sp)
+0x11b8: bsr.w  sub_1012             ; read slot value
+0x11bc: addq.l #4, sp
+0x11be: tst.l  d0
+0x11c0: bne.s  0x11a8               ; still non-zero -> continue loop
+
+0x11c2: move.l d2, -(sp)
+0x11c4: bsr.w  sub_F8A              ; release slot
+0x11c8: move.l d3, d0               ; function result (0 = timeout, 1 = callback success)
+0x11ca: movem.l var_C(a6), d2-d3/a2
+0x11d0: unlk   a6
+0x11d2: rts
+```
+
+Reconstructed C implementation:
+```c
+int pgm_bios_timer_dispatch(uint32_t descriptor, int (*poll_cb)(void)) {
+    int slot_index = pgm_bios_timer_alloc();      /* sub_F40 */
+    int completed = 0;
+
+    pgm_bios_timer_write(slot_index, descriptor); /* sub_104E */
+
+    while (1) {
+        if (poll_cb != NULL) {
+            int rc = poll_cb();
+            if (rc != 0) {
+                completed = 1;
+                break;
+            }
+        }
+
+        if (pgm_bios_timer_read(slot_index) == 0) {  /* sub_1012 */
+            break;                                   /* descriptor cleared */
+        }
+        /* Otherwise loop again, polling until callback succeeds or slot clears. */
+    }
+
+    pgm_bios_timer_release(slot_index);            /* sub_F8A */
+    return completed;
+}
+```
+
+Analysis notes:
+- Implements a high-level workflow around the timer helpers identified earlier: allocate -> configure -> poll -> release.
+- When no callback is supplied, the loop simply waits for the slot contents to become zero, signalling completion (likely by a hardware ISR updating the table).
+- With a callback, the routine keeps invoking it while the slot remains non-zero; the callback decides when to stop by returning non-zero.
+- Returns 1 only when the callback explicitly signals completion. A natural interpretation is ?1 = job finished by callback, 0 = job finished because the descriptor cleared itself.?
+- Busy-waiting implies this BIOS routine is expected to run when interrupts are active to drive slot clearance. For modern re-implementations, consider yielding or sleeping inside the loop.

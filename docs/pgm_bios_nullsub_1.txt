@@ -1,0 +1,19 @@
+PGM BIOS Function: nullsub_1 (Stub)
+----------------------------------
+Summary: Placeholder subroutine that immediately returns to the caller.
+
+Assembly listing:
+```asm
+0x190a: rts
+```
+
+Reconstructed C implementation:
+```c
+void pgm_nullsub_1(uint32_t unused) {
+    (void)unused;
+}
+```
+
+Analysis notes:
+- Acts as a stub for optional logging or callbacks. Several routines push values onto the stack before calling it.
+- Safe to ignore during functional emulation; can be replaced with a no-op or instrumentation hook when re-implementing the BIOS logic.

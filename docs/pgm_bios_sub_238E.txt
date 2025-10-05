@@ -1,0 +1,71 @@
+PGM BIOS Function: sub_238E (Palette Block Copy via LUT)
+------------------------------------------------------
+Summary: Uses LUT tables (0xDDB4/0xDDA8) to compute a source pointer, copies a block of palette data into BIOS RAM using the 32-byte block copier (sub_D22).
+
+Inputs:
+- arg_0: LUT index selecting which palette band to operate on.
+- arg_4: base pointer forwarded to sub_D80A (e.g., ROM palette table).
+- arg_8: destination pointer where the copied block is stored.
+
+Lookup tables:
+- 0xDDB4: byte table; entry multiplied/rounded to determine source offset.
+- 0xDDA8: dword table; provides base offsets added to the per-band offset.
+
+Call graph:
+- sub_D80A: helper returning offset from LUT value + rg_4.
+- sub_D22: 32-byte block copy routine.
+
+Assembly listing:
+`sm
+0x238e: link   a6, #0
+0x2392: movem.l d2-d3, -(sp)
+0x2396: move.l arg_0(a6), d3
+0x239a: movea.l #0xDDB4, a0
+0x23a0: move.b (a0,d3.l), d2
+0x23a4: andi.l #0xFF, d2
+0x23aa: move.l d2, d0
+0x23ac: add.l d0, d0
+0x23ae: bge.s  0x23b4
+0x23b0: moveq  #0x1F, d1
+0x23b2: add.l  d1, d0
+0x23b4: asr.l  #5, d0               ; divide by 32 with rounding
+0x23b6: move.l d0, -(sp)
+0x23b8: move.l arg_8(a6), -(sp)     ; destination
+0x23bc: move.l arg_4(a6), d0
+0x23c0: move.l d2, d1
+0x23c2: jsr    sub_D80A             ; compute offset
+0x23c8: add.l d0, d0
+0x23ca: move.l d3, d1
+0x23cc: lsl.l #2, d1
+0x23ce: movea.l #0xDDA8, a0
+0x23d4: add.l (a0,d1.l), d0         ; add base
+0x23d8: move.l d0, -(sp)
+0x23da: jsr    (sub_D22).l          ; copy 32-byte block
+0x23e0: movem.l var_8(a6), d2-d3
+0x23e6: unlk   a6
+0x23e8: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_copy_from_lut(uint32_t index, const void *base, void *dst) {
+    uint8_t lut_val   = *((uint8_t *)0xDDB4 + index);
+    uint32_t base_off = *((uint32_t *)0xDDA8 + index);
+
+    /* Round lut_val/32 with bias; ensures block alignment. */
+    uint32_t block_index = ((int32_t)lut_val + (lut_val < 0 ? 0x1F : 0)) >> 5;
+
+    uint32_t offset = sub_D80A(base, lut_val);
+    offset *= 2;
+    offset += base_off;
+
+    const void *src = (const uint8_t *)offset;  /* physical address in ROM */
+    pgm_bios_block_copy(dst, src, block_index); /* sub_D22: copies block_index*32 bytes */
+}
+`
+
+Analysis notes:
+- The rounding before sr.l #5 converts the LUT byte into a block count (multiples of 32 bytes). Negative values handled via bias to round toward zero.
+- sub_D22 expects a block count (each block 32 bytes). The function pushes both lock_index and dst before calling it.
+- Combined with sub_22E4, this routine demonstrates the palette system?s use of ROM lookup tables to fetch and apply colour data.
+- Ensure the computed src pointer is correctly mapped in the reimplementation environment; in the BIOS it likely points to ROM addresses.

@@ -1,0 +1,22 @@
+PGM BIOS Helper: sub_D874 (Unsigned Division)
+------------------------------------------
+Summary: Implements 32-bit ? 16-bit division, returning quotient in D0 and remainder in D1. Handles large dividends by decomposing the operand and calling itself recursively, and falls back to a shift/subtract routine when the divisor exceeds 0xFFFF.
+
+Key behaviour:
+- If divisor < 0x10000: uses 68K `divu` when possible; otherwise performs a manual long division with shifting (`dbf` loop).
+- Returns quotient in `d0`, remainder in `d1`.
+- Preserves D2/D3 in cases that require extended precision.
+
+Usage:
+- Called from helper routines (sub_7F6A, sub_46C4, etc.) to convert accumulators into averaged values (seconds, minutes).
+- Often followed by `sub_D8D8` to split the remainder against 0x3C (60).
+
+Example pseudocode:
+```c
+uint32_t pgm_div_u32_u16(uint32_t numerator, uint16_t denominator, uint16_t *rem) {
+    uint32_t q = numerator / denominator;
+    uint16_t r = numerator % denominator;
+    if (rem) *rem = r;
+    return q;
+}
+```

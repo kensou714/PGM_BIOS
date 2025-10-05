@@ -1,0 +1,23 @@
+PGM BIOS Function: sub_3054 (Palette/Fade System Reset)
+-----------------------------------------------------
+Summary: Calls the fade timing reset (sub_2C6C) and palette bookkeeping reset (sub_2008). Intended to clear all palette/fade state during boot or when reinitialising the video subsystem.
+
+Assembly listing:
+`sm
+0x3054: bsr.w  sub_2C6C
+0x3058: jsr    (sub_2008).l
+0x305e: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_fade_reset(void) {
+    pgm_fade_timing_reset();   /* sub_2C6C */
+    pgm_palette_reset();       /* sub_2008 */
+}
+`
+
+Analysis notes:
+- Provides a single entry point to wipe fade timers and palette slot counters.
+- Likely invoked during BIOS start-up or when exiting attract mode.
+- No arguments or state preservation required.

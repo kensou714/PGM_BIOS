@@ -1,0 +1,28 @@
+PGM BIOS Function: sub_6910 (Clear VRAM Region ? 0x904000)
+--------------------------------------------------------
+Summary: Clears a 0x80-word region starting at address 0x904000 by invoking the fill helper `sub_E10`.
+
+Parameters:
+- arg_0: unused in the current implementation (address derived from constant).
+
+Call sequence:
+```asm
+pea 0x0080        ; number of blocks (0x80)
+clr.l -(sp)       ; fill pattern = 0
+move.l #0x904000, -(sp)
+jsr sub_E10       ; clear memory
+```
+
+`sub_E10` fills memory with a repeated pattern; here it writes zeros to 0x904000..0x904000 + 0x80 * 64 bytes (assuming block = 16 longwords).
+
+C-style equivalent:
+```c
+void pgm_clear_vram_904000(void) {
+    pgm_bios_fill_blocks((void *)0x904000, 0x00000000, 0x80);
+}
+```
+
+Analysis notes:
+- Used to clear a specific VRAM/shadow RAM bank before rendering.
+- The literal `0x904000` suggests a graphics buffer region; cross-reference with service menu initialisation to verify usage.
+- No parameters; caller simply invokes it to reset the buffer.

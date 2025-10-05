@@ -1,0 +1,21 @@
+PGM BIOS Function: sub_6928 (Clear VRAM 0x900000 and Update Ranking Slot)
+-----------------------------------------------------------------------
+Summary: Clears a 0x100-word block at address 0x900000, then writes a single ranking slot via `sub_63E2`. Acts as a convenience wrapper during ranking initialisation.
+
+Behaviour:
+1. `sub_E10(0x900000, 0, 0x100)` ? zeroes the region starting at 0x900000.
+2. Pushes zeros and the value 1, then calls `sub_63E2` to update ranking slot index 1 with zeroed counters.
+3. Returns without touching arguments.
+
+Equivalent C implementation:
+```c
+void pgm_clear_vram_900000_and_reset_slot(void) {
+    pgm_bios_fill_blocks((void *)0x900000, 0x00000000, 0x100);
+    pgm_ranking_update_slot(1, 0, 0);
+}
+```
+
+Analysis notes:
+- The extra `clr.l` pushes before `sub_63E2` supply the `value_lo` and `value_hi` arguments (both zero).
+- Hard-coded slot index 1 indicates this helper resets a specific ranking display column.
+- Invoked during service menu initialisation or when switching to a new ranking page.

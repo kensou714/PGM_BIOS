@@ -1,0 +1,21 @@
+PGM BIOS Helper: sub_D8D8 (Divide by 0x3C)
+---------------------------------------
+Summary: Divides a 32-bit value by 0x3C (60) using shift/subtract loops when direct `divu` overflows. Returns the quotient in D0 and remainder in D1, similar to `divu`, but safe for large numerators.
+
+Usage:
+- Combined with `sub_D874` to convert tick counts into minutes/seconds for ranking displays.
+- Called multiple times in sub_46C4 to derive per-play averages.
+
+Behaviour:
+1. If numerator < 0x10000, uses `divu` directly.
+2. Else saves D2/D3, performs iterative shifting and subtraction to obtain quotient and remainder.
+3. Restores registers and returns.
+
+Pseudocode:
+```c
+uint32_t pgm_div_u32_by_60(uint32_t value, uint32_t *rem) {
+    uint32_t q = value / 60;
+    if (rem) *rem = value % 60;
+    return q;
+}
+```

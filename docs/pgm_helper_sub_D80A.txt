@@ -1,0 +1,28 @@
+PGM BIOS Helper: sub_D80A (Index * Stride Helper)
+----------------------------------------------
+Summary: Multiplies a stride (`d1`) by an index (`d0`) while correctly handling high bits for 24-bit addresses. The routine performs the multiply using 16-bit `mulu` instructions and reconstructs the full 32-bit product, preserving any carry from the high word.
+
+Pseudocode:
+```c
+uint32_t pgm_mul_stride(uint32_t index, uint32_t stride) {
+    uint32_t lo = (index & 0xFFFF) * (stride & 0xFFFF);
+    uint32_t hi = ((index & 0xFFFF) * (stride >> 16)) << 16;
+    if ((index >> 16) != 0) {
+        hi += ((index >> 16) * (stride & 0xFFFF)) << 16;
+    }
+    if ((stride >> 16) != 0) {
+        hi += ((index & 0xFFFF) * (stride >> 16)) << 16;
+    }
+    return (index >> 16 ? ((index >> 16) * (stride >> 16)) << 32 : 0) + hi + lo;
+}
+```
+In practice the routine packs the intermediate results into D0/D2 using `swap` and `mulu` to emulate a full 32-bit multiply on the 68K.
+
+Usage:
+- Frequently invoked to compute byte offsets into VRAM or tile tables: `offset = sub_D80A(column, stride) + base`.
+- Called from text renderer `sub_6E72`, palette loaders, and ranking routines to avoid overflow when strides exceed 16 bits.
+
+Key behaviour:
+- Preserves D2 by saving/restoring it on the stack.
+- Returns the 32-bit product in D0.
+- Works for any stride/index up to 24-bit without overflow; higher bits would be truncated.

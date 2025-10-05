@@ -1,0 +1,20 @@
+PGM BIOS Function: sub_190C (Pending Index Stub)
+----------------------------------------------
+Summary: Returns zero. In the production BIOS this would likely fetch the identifier of the next pending event; in this ROM revision it is stubbed out.
+
+Assembly listing:
+```asm
+0x190c: moveq #0, d0
+0x190e: rts
+```
+
+Reconstructed C implementation:
+```c
+uint32_t pgm_pending_index(void) {
+    return 0;
+}
+```
+
+Analysis notes:
+- Paired with sub_1910 in several routines; both are currently placeholders.
+- Replace with hardware-specific logic when porting to an environment where the event mechanism is active.

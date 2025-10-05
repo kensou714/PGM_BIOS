@@ -1,0 +1,38 @@
+PGM BIOS Function: sub_12B8 (Stream Slot Ready Check)
+----------------------------------------------------
+Summary: Compares two counters inside a BIOS-managed structure to determine whether the FIFO-style buffer is empty. Returns 1 when the producer and consumer positions match, otherwise 0.
+
+Proposed prototype:
+    int pgm_stream_is_empty(struct pgm_stream *slot);
+
+Argument mapping:
+- arg_0 (A0): pointer to a stream control block with fields at offsets +0x14 and +0x18.
+
+Observed structure layout (partial):
+- +0x14: read index (consumer position).
+- +0x18: write index (producer position).
+
+Assembly listing:
+```asm
+0x12b8: movea.l 4(sp), a0
+0x12bc: move.l  0x18(a0), d0        ; producer index
+0x12c0: cmp.l   0x14(a0), d0        ; compare with consumer index
+0x12c4: beq.s   0x12ca              ; equal? -> empty flag
+0x12c6: moveq   #0, d0
+0x12c8: bra.s   0x12cc
+0x12ca: moveq   #1, d0
+0x12cc: rts
+```
+
+Reconstructed C implementation:
+```c
+int pgm_stream_is_empty(struct pgm_stream *slot) {
+    return (slot->write_pos == slot->read_pos) ? 1 : 0;
+}
+```
+
+Analysis notes:
+- No register preservation; simple leaf routine.
+- The surrounding functions (see sub_1310) treat the structure as a ring buffer for byte streams.
+- Return convention matches BIOS style (1 = true, 0 = false).
+- Useful for call-site identification: any routine that polls this helper likely manages serial/IO queues.

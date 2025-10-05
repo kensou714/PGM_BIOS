@@ -1,0 +1,62 @@
+PGM BIOS Function: sub_27B0 (Fade Slot Release)
+---------------------------------------------
+Summary: Releases a fade slot in the table at 0x801F0E. If the slot has an associated palette job (state != 3) it first frees that palette slot via sub_2208. Afterwards the fade slot is cleared and the active counter at 0x802056 is decremented.
+
+Argument mapping:
+- arg_0: fade slot index (0?3).
+
+Key fields used:
+- slot base = 0x801F0E + index * 0x52.
+- slot[0]: state byte (checked against 3).
+- slot[0x0B]: palette slot index previously assigned by sub_2466.
+- (uint32_t *)(slot + 2): descriptor data cleared on release.
+- Global counter at 0x802056 decremented to reflect fewer active fade slots.
+
+Assembly listing:
+`sm
+0x27b0: link   a6, #0
+0x27b4: move.l a2, -(sp)
+0x27b6: move.l 4(a6), d0
+0x27ba: move.l d0, d1
+0x27bc: lsl.l  #2, d0
+0x27be: add.l  d1, d0
+0x27c0: lsl.l  #3, d0
+0x27c2: add.l  d1, d0
+0x27c4: add.l  d0, d0              ; offset = index * 0x52
+0x27c6: movea.l #0x801F0E, a0
+0x27cc: adda.l  d0, a0
+0x27ce: movea.l a0, a2
+0x27d0: cmpi.b  #3, (a2)
+0x27d4: beq.s   0x27e4
+0x27d6: moveq   #0, d0
+0x27d8: move.b  0x0B(a2), d0
+0x27dc: move.l  d0, -(sp)
+0x27de: jsr     (sub_2208).l       ; release palette slot
+0x27e4: clr.b   (a2)
+0x27e6: clr.l   2(a2)
+0x27ea: subq.b  #1, (0x802056).l
+0x27f0: movea.l (sp)+, a2
+0x27f4: unlk   a6
+0x27f6: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_fade_slot_release(int index) {
+    uint8_t *slot = (uint8_t *)0x801F0E + index * 0x52;
+
+    if (slot[0] != 3) {
+        pgm_palette_slot_release(slot[0x0B]);  /* sub_2208 */
+    }
+
+    slot[0] = 0;
+    *(uint32_t *)(slot + 2) = 0;
+    (*(volatile uint8_t *)0x802056)--;
+}
+`
+
+Analysis notes:
+- State value 3 appears to mean ?palette job already completed?, so no palette slot release is needed in that case.
+- Ensures both state and descriptor fields are cleared, matching the allocations in sub_2466/sub_250A.
+- The counter at 0x802056 mirrors the number of allocated fade slots; its balance with sub_2466 confirms correct lifecycle management.
+- No index validation; caller must supply indices that were previously allocated.

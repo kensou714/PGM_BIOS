@@ -1,0 +1,25 @@
+PGM BIOS Function: sub_2008 (Reset Palette Job Counters)
+------------------------------------------------------
+Summary: Clears three longwords at 0x801ED0, 0x801ED4, and 0x801ED8. These addresses lie near the palette job structures used by sub_2086/sub_21AC.
+
+Assembly listing:
+`sm
+0x2008: clr.l (0x801ED0).l
+0x200e: clr.l (0x801ED4).l
+0x2014: clr.l (0x801ED8).l
+0x201a: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_reset(void) {
+    *(uint32_t *)0x801ED0 = 0;
+    *(uint32_t *)0x801ED4 = 0;
+    *(uint32_t *)0x801ED8 = 0;
+}
+`
+
+Analysis notes:
+- Likely called during BIOS initialisation to zero palette task bookkeeping.
+- The cleared addresses precede the palette slot array at 0x801EDC accessed by sub_2086/sub_21AC.
+- No register preservation required; simple leaf routine.

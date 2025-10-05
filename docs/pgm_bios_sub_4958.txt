@@ -1,0 +1,65 @@
+PGM BIOS Function: sub_4958 (Render Play/Continue Statistics Screen)
+-------------------------------------------------------------------
+Summary: Wrapper that renders the service-mode screen showing play counts, continue counts, and average time per play. It orchestrates column layout via `loc_3984` and `sub_37D6`, then draws textual labels using `sub_6E72`.
+
+Inputs:
+- arg_0 (`d2`): starting column index (passed along to the helpers to decide which portion of the table to display).
+
+Behaviour steps:
+1. Calls `loc_3984` (within the `sub_383C` module) with coordinate tables at 0xE108/0xE110 to draw table dividers and headings.
+2. Invokes `sub_37D6` with the same column index to populate numeric rows (pulls data via sub_7932).
+3. Prints four static labels at fixed positions:
+   - "Play" (x=0x11, y=5)
+   - "Conti" (x=0x20, y=5)
+   - "Av.Time" (x=0x2E, y=5)
+   - "Total" (x derived from column index, unless displaying the final column set).
+
+Representative assembly:
+```asm
+0x495e: move.w d2, d0
+0x4960: move.l d0, -(sp)
+0x4962: pea    (0xE110).l
+0x4968: pea    (0x0004).w
+0x496c: pea    (0xE108).l
+0x4972: pea    (0x0004).w
+0x4976: pea    (1).w
+0x497a: bsr.w  loc_3984            ; draw table headers
+
+0x497e: pea    (0x32).w
+0x4982: pea    (3).w
+0x4986: pea    (2).w
+0x498a: bsr.w  sub_37D6            ; render numeric rows
+0x498e: lea    0x24(sp), sp
+
+; Label strings via sub_6E72
+0x4992: pea    ("Play").l
+...
+0x49ae: pea    ("Conti").l
+...
+0x49ce: pea    ("Av.Time").l
+...
+0x49f2: pea    ("Total").l  ; omitted when column==7
+```
+
+Reconstructed C implementation:
+```c
+void pgm_render_play_continue_screen(uint32_t column_index) {
+    loc_3984(column_index, (void *)0xE108, (void *)0xE110, /*styles*/1, 4, 4);
+    pgm_render_meter_rows(column_index, (void *)0xE108, 2);  /* sub_37D6 */
+
+    sub_6E72(0, 0x11, 5, 0, 1, "Play");
+    sub_6E72(0, 0x20, 5, 0, 1, "Conti");
+    sub_6E72(0, 0x2E, 5, 0, 0, "Av.Time");
+
+    if (column_index != 7) {
+        uint32_t total_x = column_index * 2 + 3;
+        sub_6E72(0, total_x, 3, 0, 1, "Total");
+    }
+}
+```
+
+Analysis notes:
+- This routine sits on top of the meter/column framework provided by `sub_37D6` and `loc_3984`, acting mainly as a presenter for textual labels.
+- Strings reside in the ROM text table (`Play`, `Conti`, `Av.Time`, `Total`).
+- Column index boundaries follow the same convention as the ranking screens (page-based navigation).
+- When a menu reimplementation is attempted, treat `loc_3984` as the helper that draws grid lines and pass the same coordinate tables (0xE108/0xE110).

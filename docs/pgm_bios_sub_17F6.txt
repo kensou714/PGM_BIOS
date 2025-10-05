@@ -1,0 +1,91 @@
+PGM BIOS Function: sub_17F6 (Pending Entry Fetch)
+-----------------------------------------------
+Summary: Checks the global pending-event status via sub_1910/sub_190C. If the supplied index matches the pending entry it returns 1 immediately. Otherwise, or when sub_1910 signals pending work, it inspects a record in the table at 0x801576 (six-byte entries) and returns its 16-bit identifier if the record is marked active.
+
+Proposed prototype:
+    uint32_t pgm_pending_fetch(uint32_t index);
+
+Argument mapping:
+- arg_0 (D3): index provided by caller.
+
+Associated data/helpers:
+- sub_1910: returns 1 when an event is pending (note: BIOS stub currently hardcodes 1).
+- sub_190C: returns 0 in the present ROM build (placeholder for real pending index).
+- Table at 0x801576: array of records (structure inferred below).
+
+Inferred record layout at 0x801576 (offsets relative to entry base):
+- +0: byte flag (purpose unclear yet).
+- +1: byte flag; when non-zero indicates entry active.
+- +2: word identifier returned to caller.
+- +4: word unknown (not used here).
+
+Assembly listing:
+`sm
+0x17f6: movem.l d2-d3/a2, -(sp)
+0x17fa: move.l  0x0c(sp), d3
+0x17fe: jsr     sub_1910
+0x1802: nop
+0x1804: tst.l   d0
+0x1806: bne.s   0x1822              ; pending -> skip immediate match
+0x1808: jsr     sub_190C
+0x180c: nop
+0x180e: move.l  d0, d2
+0x1810: cmp.l   d3, d2
+0x1812: bne.s   0x1818
+0x1814: moveq   #1, d0              ; exact match
+0x1816: bra.s   0x184e
+0x1818: move.l  d2, -(sp)
+0x181a: jsr     nullsub_1           ; placeholder hook
+0x181e: nop
+0x1820: addq.l  #4, sp
+0x1822: move.l  d3, d0
+0x1824: add.l   d0, d0
+0x1826: add.l   d3, d0
+0x1828: add.l   d0, d0              ; offset = index * 6
+0x182a: movea.l #0x801576, a0
+0x1830: adda.l  d0, a0
+0x1832: movea.l a0, a2
+0x1834: tst.w   2(a2)
+0x1838: beq.s   0x184c              ; zero identifier -> inactive
+0x183a: tst.b   1(a2)
+0x183e: beq.s   0x184c              ; active flag not set
+0x1840: clr.b   1(a2)               ; clear active flag
+0x1844: moveq   #0, d0
+0x1846: move.w  2(a2), d0           ; return identifier
+0x184a: bra.s   0x184e
+0x184c: moveq   #0, d0              ; default return 0
+0x184e: movem.l (sp)+, d2-d3/a2
+0x1852: rts
+`
+
+Reconstructed C implementation:
+`c
+uint32_t pgm_pending_fetch(uint32_t index) {
+    if (sub_1910() == 0) {
+        uint32_t pending = sub_190C();
+        if (pending == index) {
+            return 1;
+        }
+        nullsub_1(pending);
+    }
+
+    uint32_t offset = (index & 0xFFFFu) * 6u;
+    uint8_t *entry = (uint8_t *)0x801576 + offset;
+
+    uint16_t identifier = *(uint16_t *)(entry + 2);
+    uint8_t active      = entry[1];
+
+    if (identifier == 0 || active == 0) {
+        return 0;
+    }
+
+    entry[1] = 0;
+    return identifier;
+}
+`
+
+Analysis notes:
+- Mirrors sub_1730 but enforces active-flag and identifier checks before acknowledging the record.
+- Current BIOS stubs always force the fallback path (sub_1910 returns 1, sub_190C returns 0), implying the real hardware firmware would replace these with IRQ-driven logic.
+- Clearing the active flag at +1 performs an acknowledge; expect another routine to set this flag when the event is first queued.
+- The placeholder call to nullsub_1 was likely a debug hook in development builds.

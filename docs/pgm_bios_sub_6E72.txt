@@ -1,0 +1,33 @@
+PGM BIOS Function: sub_6E72 (Service Text Renderer)
+-----------------------------------------------
+Summary: Core routine that renders formatted strings onto the service menu tilemap. It supports multiple rendering modes (bitmap strips versus tile text) and writes into VRAM regions 0x904000/0x900000 depending on the mode.
+
+Parameters (observed):
+- arg_0: rendering mode selector (0 = strip to 0x904000, 1 = strip to 0x900000, others = general tile text).
+- arg_4: base tilemap address offset.
+- arg_8: column offset (tile index) used with sub_D80A.
+- arg_C: initial kerning / tile advance offset.
+- arg_10: font/table index selecting glyph widths and palette data.
+- arg_14: pointer to a null-terminated ASCII string to draw.
+
+Mode 0/1 (strip renderer):
+- Fetches width and palette data from ROM tables at 0xDD9A / 0xDD9B.
+- Calls sub_7F6A to emit a 0x40-byte sprite strip for the requested string.
+- Uses sub_D80A to compute the VRAM destination offset and writes the strip to 0x904000 (mode 0) or 0x900000 (mode 1).
+- Updates bookkeeping tables at 0x18500 to track glyph placement.
+
+Default mode (tile text):
+1. Computes a base tile pointer with sub_D80A(arg_8, font_width) + arg_4.
+2. Iterates over each character from arg_14, handling control codes (e.g. newline, spacing) and converting to tile indices.
+3. Writes tile codes and attributes into the destination tilemap / attribute map, using lookup tables for glyph data and palette bits.
+4. Supports kerning and wrapping: the algorithm copies intermediate tile data (via stack buffer) when insertion is required, then uses sub_D9B2 to finalize writes.
+
+Support routines invoked:
+- sub_7F6A: builds glyph strips from font ROM data.
+- sub_D80A: multiplies index by stride to obtain VRAM offsets.
+- sub_D9B2: copies prepared data blocks into VRAM safely.
+
+Analysis notes:
+- Many higher-level UI helpers (sub_3798, sub_3E3C, sub_4958, etc.) wrap this function with specific arguments to draw service text.
+- ROM tables 0xDD9A/0xDD9B provide per-font width/palette values; 0x18500 holds base addresses for font assets.
+- For a faithful reimplementation, focus on the character loop at 0x6F64?0x701A, which applies spacing, loads glyphs, and writes tile codes. Document helper behaviours (sub_D80A, sub_D9B2) for complete understanding.

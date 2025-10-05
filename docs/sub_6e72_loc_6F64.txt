@@ -1,0 +1,67 @@
+0x6f64: movea.l a3, a4
+0x6f66: bra.w loc_701A
+0x6f6a: moveq #$A, d0
+0x6f6c: cmp.l d2, d0
+0x6f6e: bne.s loc_6F7E
+0x6f70: move.l d3, d0
+0x6f72: mulu.w d4, d0
+0x6f74: lsl.l #2, d0
+0x6f76: adda.l d0, a3
+0x6f78: movea.l a3, a4
+0x6f7a: bra.w loc_701A
+0x6f7e: moveq #9, d0
+0x6f80: cmp.l d2, d0
+0x6f82: bne.s loc_6F9A
+0x6f84: movea.l arg_14(a6), a0
+0x6f88: addq.l #1, arg_14(a6)
+0x6f8c: move.b (a0), d0
+0x6f8e: ext.w d0
+0x6f90: ext.l d0
+0x6f92: move.l d0, arg_C(a6)
+0x6f96: bra.w loc_701A
+0x6f9a: moveq #$61, d0
+0x6f9c: cmp.l d2, d0
+0x6f9e: bgt.s loc_6FAA
+0x6fa0: moveq #$7A, d0
+0x6fa2: cmp.l d2, d0
+0x6fa4: blt.s loc_6FAA
+0x6fa6: moveq #$20, d0
+0x6fa8: sub.l d0, d2
+0x6faa: moveq #$20, d0
+0x6fac: sub.l d0, d2
+0x6fae: move.l d2, d0
+0x6fb0: move.l d7, d1
+0x6fb2: jsr sub_D80A
+0x6fb8: move.l d4, d1
+0x6fba: jsr sub_D80A
+0x6fc0: add.l d5, d0
+0x6fc2: move.l d0, d2
+0x6fc4: move.l a4, var_C(a6)
+0x6fc8: clr.l var_4(a6)
+0x6fcc: bra.s loc_700E
+0x6fce: movea.l var_C(a6), a2
+0x6fd2: clr.l var_8(a6)
+0x6fd6: bra.s loc_6FFC
+0x6fd8: clr.l (a2)
+0x6fda: move.l arg_C(a6), d0
+0x6fde: andi.l #$1F, d0
+0x6fe4: add.l d0, d0
+0x6fe6: andi.b #$C1, 3(a2)
+0x6fec: or.b d0, 3(a2)
+0x6ff0: move.l d2, d0
+0x6ff2: addq.l #1, d2
+0x6ff4: move.w d0, (a2)
+0x6ff6: addq.l #1, var_8(a6)
+0x6ffa: addq.l #4, a2
+0x6ffc: cmp.l var_8(a6), d7
+0x7000: bgt.s loc_6FD8
+0x7002: addq.l #1, var_4(a6)
+0x7006: move.l d3, d0
+0x7008: lsl.l #2, d0
+0x700a: add.l d0, var_C(a6)
+0x700e: cmp.l var_4(a6), d4
+0x7012: bgt.s loc_6FCE
+0x7014: move.l d7, d0
+0x7016: lsl.l #2, d0
+0x7018: adda.l d0, a4
+0x701a: movea.l arg_14(a6), a0

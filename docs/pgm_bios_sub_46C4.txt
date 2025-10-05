@@ -1,0 +1,98 @@
+PGM BIOS Function: sub_46C4 (Render Extended Ranking Page)
+---------------------------------------------------------
+Summary: Draws a six-column statistics page for the ranking table. The caller specifies the starting column index (`arg_4`) and the base of the ranking structure (`arg_0`). For each of the six consecutive entries it renders score/time data, per-entry averages, and supporting metrics. It also produces aggregated totals for the remaining entries that are not displayed on the current page.
+
+Inputs:
+- arg_0: pointer to the ranking table base (layout produced by sub_4076).
+- arg_4 (`d7`): starting column index (0?6). Values outside this range trigger a warning via `sub_7FCC` but processing continues.
+
+Per-entry processing (loop at `loc_4744`):
+- Skips empty slots (`entry->marker` at +0x18 equals 0xFFFF).
+- Treats the pair of dwords at +0x0C/+0x10 as elapsed time ticks; if both are zero the average fields are cleared and no division is attempted.
+- Otherwise computes:
+  * `var_14`  = combined frame count (`entry->time_low + entry->time_high`).
+  * `d6`      = average per-play time in seconds (via `sub_D874` / `sub_D8D8`).
+  * `d2`      = integer minutes component for formatted output.
+  * `var_C`   = rolling average shared with later printouts.
+- Converts the score total at +0x18 (word) to a percentage using `sub_D8F4(value, 0x64)`.
+- Looks up a course/name string using `entry->course_id` (+0x1A) from the ROM table at 0xE0B8.
+- Issues a series of `sub_74CC` calls with format strings (`"S%02d"`, `"%7d"`, `"%7d"`, `"%4d"`, `"%4d %02d"`, etc.) to print:
+  * Course header with difficulty.
+  * Play count (`entry->plays`), continue count (`entry->continues`), and total time.
+  * Average time per play in `mm:ss` form and other derived statistics.
+- Accumulates column totals in locals `var_4`, `var_8`, `var_10` and counts how many slots were shown (`d5`).
+
+After the six-column loop (`loc_485C` ? `loc_494E`):
+1. If additional slots remain beyond the page, walks the full 12-entry block at base + 0xE0 to accumulate grand totals (`var_4`, `var_8`, `var_10`).
+2. Computes summary averages again with `sub_D874/sub_D8D8` to obtain minutes/seconds.
+3. Prints total plays, total continues, and overall average values using dedicated format strings (`"%7d"`, `"%4d"`, `"%4d %02d"`).
+
+Reconstructed C-style pseudocode:
+```c
+void pgm_ranking_render_page(void *table_base, uint32_t start_column) {
+    uint8_t *base = (uint8_t *)table_base;
+
+    if (start_column == 0 || start_column == 6) {
+        sub_7FCC("M0-M6", "C OO k C", 0x1F2);
+    }
+
+    uint32_t total_play  = 0;
+    uint32_t total_cont  = 0;
+    uint32_t total_ticks = 0;
+
+    uint32_t column = start_column;
+    uint8_t *entry = base + 0xE0 + 0x1C * start_column;
+
+    for (; column < start_column + 6; ++column, entry += 0x1C) {
+        if (*(uint16_t *)(entry + 0x18) == 0xFFFF) {
+            continue;
+        }
+
+        uint32_t plays = *(uint32_t *)(entry + 0x0C);
+        uint32_t conts = *(uint32_t *)(entry + 0x10);
+        uint32_t ticks = plays + conts;
+
+        uint32_t avg_ticks = ticks ? *(uint32_t *)(entry + 0x14) : 0;
+        uint32_t avg_secs  = ticks ? sub_D874(avg_ticks, ticks) : 0;
+        uint32_t avg_mins  = ticks ? sub_D8D8(avg_secs, 0x3C) : 0;
+        uint32_t percent   = sub_D8F4(*(uint16_t *)(entry + 0x18), 0x64);
+        const char *course = ((const char **)0xE0B8)[entry[0x1A]];
+
+        uint32_t x = column * 2 + 7;
+        sub_74CC("S%02d", course, entry[0x1B], x, 2);
+        sub_74CC("%7d", plays, x, 0x0F);
+        sub_74CC("%7d", conts, x, 0x1E);
+        sub_74CC("%4d", *(uint32_t *)(entry + 0x14), x, 0x2D);
+        sub_74CC("%4d %02d", avg_mins, avg_secs % 0x3C, x, 0x3C);
+
+        total_play  += plays;
+        total_cont  += conts;
+        total_ticks += *(uint32_t *)(entry + 0x14);
+    }
+
+    uint8_t *scan = base + 0xE0;
+    for (int i = 0; i < 12; ++i, scan += 0x1C) {
+        if (*(uint16_t *)(scan + 0x18) == 0xFFFF) {
+            continue;
+        }
+        total_play  += *(uint32_t *)(scan + 0x0C);
+        total_cont  += *(uint32_t *)(scan + 0x10);
+        total_ticks += *(uint32_t *)(scan + 0x14);
+    }
+
+    uint32_t denom     = total_play + total_cont;
+    uint32_t avg_secs  = denom ? sub_D874(total_ticks, denom) : 0;
+    uint32_t avg_mins  = denom ? sub_D8D8(avg_secs, 0x3C) : 0;
+    uint32_t total_x   = (start_column + 6) * 2 + 7;
+
+    sub_74CC("%7d", total_play, total_x, 0x0F);
+    sub_74CC("%7d", total_cont, total_x, 0x1E);
+    sub_74CC("%4d %02d", avg_mins, avg_secs % 0x3C, total_x, 0x2E);
+}
+```
+
+Analysis notes:
+- Extends the ranking renderer (`sub_4138`, `sub_42CC`) with average-time statistics and multi-column output.
+- The helper `sub_D874` performs a 32-bit divide; `sub_D8D8` returns remainder vs 0x3C to split minutes and seconds. Document these helpers separately when analysed.
+- String templates (e.g., `aS02d_0`, `a7d_11`, `a4d02d_1`) reside in the ROM text table and are reused by other service screens.
+- Aggregated totals ensure the bottom row reflects the entire data set, not just the currently paged columns.

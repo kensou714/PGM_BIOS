@@ -1,0 +1,65 @@
+PGM BIOS Function: sub_F40 (Allocate Timer Slot)
+-----------------------------------------------
+Summary: Scans the BIOS timer table at 0x801550 for a free entry (value 0xFFFFFFFF), reserves it, increments the active-count byte at 0x801560, and returns the slot index. Emits an "Out of timer" warning when no slots remain.
+
+Proposed prototype:
+    int pgm_bios_timer_alloc(void);
+
+Global state involved:
+- (uint32_t *)0x801550: array of four 32-bit timer descriptors. A value of 0xFFFFFFFF denotes a free slot.
+- (uint8_t  *)0x801560: running count of allocated timers; incremented on success.
+- 0x12d7e ("Out of timer"): message string pushed to sub_8120 on exhaustion.
+
+Assembly listing:
+```asm
+0x0f40: move.l d2, -(sp)
+0x0f42: moveq   #0, d2              ; slot index = 0
+0x0f44: move.w  d2, d0
+0x0f46: lsl.w   #2, d0              ; offset = index * 4
+0x0f48: movea.l #0x801550, a0
+0x0f4e: move.l  (a0,d0.w), d0       ; read table entry
+0x0f52: moveq   #-1, d1             ; free marker = 0xFFFFFFFF
+0x0f54: cmp.l   d0, d1
+0x0f56: bne.s   0x0f70              ; if not free, test next slot
+0x0f58: move.w  d2, d0              ; capture free index
+0x0f5a: lsl.w   #2, d0
+0x0f5c: movea.l #0x801550, a0
+0x0f62: clr.l   (a0,d0.w)           ; reserve slot (write 0)
+0x0f66: addq.b  #1, (0x801560).l    ; increment active timer count
+0x0f6c: move.l  d2, d0              ; return slot index
+0x0f6e: bra.s   0x0f86
+0x0f70: addq.l  #1, d2              ; index++
+0x0f72: moveq   #4, d0
+0x0f74: cmp.l   d2, d0
+0x0f76: bgt.s   0x0f44              ; repeat while index < 4
+0x0f78: pea     (0x12d7e).l         ; "Out of timer"
+0x0f7e: jsr     sub_8120            ; BIOS logging helper
+0x0f86: move.l  (sp)+, d2
+0x0f88: rts
+```
+
+Reconstructed C implementation:
+```c
+int pgm_bios_timer_alloc(void) {
+    volatile uint32_t *const timer_slots = (uint32_t *)0x801550;
+    volatile uint8_t  *const timer_count = (uint8_t  *)0x801560;
+
+    for (int index = 0; index < 4; ++index) {
+        if (timer_slots[index] == 0xFFFFFFFFu) {
+            timer_slots[index] = 0;      /* mark slot in use */
+            (*timer_count)++;            /* track outstanding timers */
+            return index;
+        }
+    }
+
+    sub_8120("Out of timer");         /* ROM diagnostics / assert */
+    return 4;                          /* failure sentinel */
+}
+```
+
+Analysis notes:
+- Only D2 is preserved; the helper is otherwise leaf-like and safe for interrupt contexts.
+- Depends on prior initialisation (likely via sub_E10) to seed the table with 0xFFFFFFFF.
+- Caller must treat return values >= 4 as failure.
+- Counter at 0x801560 must remain balanced with decrements in sub_F8A to avoid wrap-around.
+- sub_8120 probably routes messages to the BIOS console or watchdog handler; investigate once that routine is analysed.

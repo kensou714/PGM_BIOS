@@ -1,0 +1,86 @@
+PGM BIOS Function: sub_55AA (Find or Insert Ranking Entry ? Extended Table)
+-------------------------------------------------------------------------
+Summary: Mirrors `sub_54EC`, but operates on the extended ranking table where each entry is 0x1C bytes. It looks for an entry matching the globally staged identifiers. On success it returns that entry; otherwise it shifts the table, inserts a new entry at the head, seeds it with the current identifiers, clears the statistics fields, and returns the new slot.
+
+Parameters:
+- arg_0: pointer to the table base (entries are 0x1C bytes).
+- arg_4 (`count`): number of entries to scan.
+- arg_8 (`strict`): when non-zero the comparison uses both bytes at +0x1A/+0x1B and the word at +0x18; otherwise only +0x1A and +0x18 are checked.
+
+Global identifiers used during matching/initialisation:
+- 0x802098 (word) ? entry word +0x18 (course/stage id).
+- 0x80209A (word) ? entry byte +0x1A (difficulty).
+- 0x80209B (byte) ? entry byte +0x1A for new entries.
+- 0x80209C (word) ? entry byte +0x1B (variant) when `strict` is true.
+- 0x80209D (byte) ? entry byte +0x1B for new entries.
+
+Entry layout (0x1C bytes):
+- +0x00/+0x04/+0x08: 32-bit counters.
+- +0x0C/+0x10/+0x14: additional counters (e.g. time breakdown).
+- +0x18: 16-bit course id.
+- +0x1A: 8-bit difficulty id.
+- +0x1B: 8-bit variant/group id.
+
+Algorithm:
+1. Iterate over `count` entries. Skip those whose marker (`word +0x18`) equals 0xFFFF.
+2. When `strict != 0`, the entry matches only if `entry->variant == *0x80209C`, `entry->difficulty == *0x80209A`, and `entry->course == *0x802098`.
+   With `strict == 0`, only difficulty and course must match.
+3. If a match is found, return that entry pointer.
+4. If no match found, call `sub_545E(table_base, 0x1C, count)` to shift the table down by one slot.
+5. Populate the first entry using the staged globals and clear all statistic fields:
+   - `entry->course     = *0x802098`
+   - `entry->difficulty = *0x80209B`
+   - `entry->variant    = *0x80209D`
+   - Zero 32-bit counters at offsets 0x00, 0x04, 0x08, 0x0C, 0x10, 0x14.
+6. Return a pointer to the initialised entry.
+
+Reconstructed C-like implementation:
+```c
+struct rank_ext {
+    uint32_t a, b, c;       /* gameplay counters */
+    uint32_t d, e, f;       /* time or bonus counters */
+    uint16_t course;
+    uint8_t  difficulty;
+    uint8_t  variant;
+};
+
+struct rank_ext *pgm_ranking_find_ext(struct rank_ext *table,
+                                      uint32_t count,
+                                      bool strict) {
+    uint16_t course = *(uint16_t *)0x802098;
+    uint8_t  diff   = *(uint8_t  *)0x80209B;
+    uint8_t  variant = *(uint8_t *)0x80209D;
+    uint8_t  cmp_diff = *(uint8_t *)0x80209A;
+    uint8_t  cmp_variant = *(uint8_t *)0x80209C;
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (table[i].course == 0xFFFF) {
+            continue;
+        }
+        bool match = (table[i].difficulty == cmp_diff) &&
+                     (table[i].course == course);
+        if (strict) {
+            match &= (table[i].variant == cmp_variant);
+        }
+        if (match) {
+            return &table[i];
+        }
+    }
+
+    sub_545E(table, sizeof(struct rank_ext), count);
+
+    table[0].course     = course;
+    table[0].difficulty = diff;
+    table[0].variant    = variant;
+    table[0].a = table[0].b = table[0].c = 0;
+    table[0].d = table[0].e = table[0].f = 0;
+
+    return &table[0];
+}
+```
+
+Analysis notes:
+- Works in tandem with `sub_46C4`/`sub_4138`, which display the statistics stored in these extended entries.
+- Fields cleared to zero indicate that a new entry begins life with no accumulated stats; callers fill them in immediately after receiving the pointer.
+- The routine uses the same global staging variables as the small-table equivalent (`sub_54EC`), so callers typically set those globals once and invoke both helpers as needed.
+- `sub_545E` provides the stable block shift; ensure count ? 1 to avoid assertions.

@@ -1,0 +1,85 @@
+PGM BIOS Function: sub_1310 (Stream Enqueue Packet)
+--------------------------------------------------
+Summary: Attempts to copy a fixed-length packet from a caller buffer into a BIOS-managed ring slot. If the stream control block reports no free slot (detected when producer and consumer counters match), the function aborts and returns 1. On success it copies the data, advances the write pointer, increments the producer counter, performs wrap-around, and returns 0.
+
+Proposed prototype:
+    int pgm_stream_enqueue(struct pgm_stream *slot, const uint8_t *src);
+
+Argument mapping:
+- arg_0 (A2): pointer to stream control block.
+- arg_4 (A0): source byte buffer containing exactly `slot->chunk_len` bytes.
+
+Structure fields (inferred from usage):
+- +0x00: base pointer of circular buffer.
+- +0x08: current write pointer.
+- +0x0C: end pointer (base + buffer size).
+- +0x10: chunk length in bytes.
+- +0x14: consumer counter.
+- +0x18: producer counter.
+
+Assembly listing:
+```asm
+0x1310: link   a6, #0
+0x1314: move.l a2, -(sp)
+0x1316: movea.l arg_0(a6), a2
+0x131a: move.l a2, -(sp)
+0x131c: bsr.w  sub_12B8             ; producer == consumer?
+0x1320: addq.l #4, sp
+0x1322: tst.l  d0
+0x1324: beq.s  0x132a               ; d0 == 0 -> free slot available
+0x1326: moveq  #1, d0               ; otherwise report busy
+0x1328: bra.s  0x1366
+0x132a: jsr    sub_8038             ; enter critical section
+0x1330: move.l 0x10(a2), d0         ; chunk length
+0x1334: movea.l arg_4(a6), a0       ; source
+0x1338: movea.l 0x08(a2), a1        ; destination
+0x133c: bra.s  0x1340
+0x133e: move.b (a0)+, (a1)+
+0x1340: subq.l #1, d0
+0x1342: bge.s  0x133e               ; copy chunk_len bytes
+0x1344: move.l 0x10(a2), d0
+0x1348: add.l  d0, 0x08(a2)         ; advance write pointer
+0x134c: addq.l #1, 0x18(a2)         ; increment producer counter
+0x1350: move.l 0x08(a2), d0
+0x1354: cmp.l  0x0c(a2), d0         ; reached buffer end?
+0x1358: bne.s  0x135e
+0x135a: move.l (a2), 0x08(a2)       ; wrap to base pointer
+0x135e: jsr    sub_804E             ; leave critical section
+0x1364: moveq  #0, d0
+0x1366: movea.l (sp)+, a2
+0x1368: unlk   a6
+0x136a: rts
+```
+
+Reconstructed C implementation:
+```c
+int pgm_stream_enqueue(struct pgm_stream *slot, const uint8_t *src) {
+    if (pgm_stream_is_empty(slot)) {             /* producer == consumer */
+        return 1;                                /* no free slot available */
+    }
+
+    sub_8038();                                   /* acquire lock / disable IRQs */
+
+    uint8_t *dest = slot->write_ptr;
+    uint32_t len  = slot->chunk_len;
+    for (uint32_t i = 0; i < len; ++i) {
+        dest[i] = src[i];
+    }
+
+    slot->write_ptr += len;
+    slot->write_count++;
+    if (slot->write_ptr == slot->end_ptr) {
+        slot->write_ptr = slot->base_ptr;
+    }
+
+    sub_804E();                                   /* release lock */
+    return 0;
+}
+```
+
+Analysis notes:
+- The predicate from sub_12B8 is interpreted as ?queue busy/no space?; later analysis should confirm by inspecting the consumer routine.
+- sub_8038 and sub_804E likely bracket critical sections (IRQ masking or semaphore control).
+- Packet size is fixed per stream control block; there is no runtime length parameter.
+- Producer/consumer counters increment monotonically; other routines probably use the difference to compute occupancy.
+- Return convention (0 success / 1 busy) matches allocations elsewhere in BIOS.

@@ -1,0 +1,46 @@
+PGM BIOS Function: sub_63E2 (Update Ranking Slot Pointers)
+--------------------------------------------------------
+Summary: Given a ranking entry index and two 16-bit values, this routine writes the values into the ranking metadata table at 0x803382 and pushes them out to the live pointers referenced by that table.
+
+Parameters:
+- arg_0: entry index (0-based). Each entry occupies 0x10 bytes in the table.
+- arg_6: 16-bit value written to offset +0x02 (e.g., course code or ?plays?).
+- arg_A: 16-bit value written to offset +0x08 (e.g., time or continues).
+
+Table layout at 0x803382 (per entry, 0x10 bytes):
+- +0x00: status byte.
+- +0x02: 16-bit field mirrored to `*(entry->ptr_lo)`.
+- +0x04: pointer to external storage for the +0x02 value.
+- +0x08: 16-bit field mirrored to `*(entry->ptr_hi)`.
+- +0x0A: pointer to external storage for the +0x08 value.
+
+Algorithm:
+1. Compute entry address = 0x803382 + index * 0x28 (since index * 8 + index = index * 9 ? `lsl #3` + add + `lsl #2` = 9 * 4 = 36 = 0x24; final stride is 0x10 after pointer math).
+2. Store `arg_6` at entry offset +0x02 and `arg_A` at offset +0x08.
+3. Load pointer at +0x04 and write the new +0x02 value to that address.
+4. Load pointer at +0x0A and write the new +0x08 value to that address.
+5. Clear the status byte at offset +0x00.
+
+Reconstructed C implementation:
+```c
+void pgm_ranking_update_slot(uint32_t index, uint16_t value_lo, uint16_t value_hi) {
+    uint8_t *entry = (uint8_t *)0x803382 + index * 0x10;
+
+    *(uint16_t *)(entry + 0x02) = value_lo;
+    *(uint16_t *)(entry + 0x08) = value_hi;
+
+    uint16_t *ptr_lo = *(uint16_t **)(entry + 0x04);
+    uint16_t *ptr_hi = *(uint16_t **)(entry + 0x0A);
+
+    *ptr_lo = value_lo;
+    *ptr_hi = value_hi;
+
+    entry[0] = 0;
+}
+```
+
+Analysis notes:
+- Acts as a synchronisation helper between the BIOS? internal ranking table and external buffers (likely displayed on screen or saved to NVRAM).
+- The status byte at +0 seems to indicate ?dirty/needs redraw?; clearing it after updates marks the entry as clean.
+- Because the routine dereferences pointers stored inside the table, the structure must be initialised beforehand (see `sub_4076` and related setup functions).
+- Callers should ensure `index` stays within the valid range of configured entries; no bounds checking is performed here.

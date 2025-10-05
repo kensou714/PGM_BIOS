@@ -1,0 +1,28 @@
+PGM BIOS Function: sub_6C9A (Preload Service Menu Palette Rows)
+-------------------------------------------------------------
+Summary: Invokes `sub_238E` five times to copy palette blocks from ROM into RAM. Each call targets a different ROM address and index, effectively preloading colour rows for the service menu UI.
+
+Behaviour:
+1. `sub_238E(0x17FE0, 0, 0)`
+2. `sub_238E(0x18000, 1, 0)`
+3. `sub_238E(0x18020, 2, 0)`
+4. `sub_238E(0x18040, 3, 0)`
+5. `sub_238E(0x18060, 4, 0)`
+
+These addresses correspond to palette data tables in ROM (`unk_18000`, etc.). The index parameter (1..4) selects which palette slot to populate.
+
+C-style equivalent:
+```c
+void pgm_preset_service_palettes(void) {
+    pgm_palette_copy_from_lut(0, (const void *)0x17FE0, NULL);
+    pgm_palette_copy_from_lut(1, (const void *)0x18000, NULL);
+    pgm_palette_copy_from_lut(2, (const void *)0x18020, NULL);
+    pgm_palette_copy_from_lut(3, (const void *)0x18040, NULL);
+    pgm_palette_copy_from_lut(4, (const void *)0x18060, NULL);
+}
+```
+
+Analysis notes:
+- Acts as a setup routine to populate palette slots before rendering service UI screens.
+- The third argument to `sub_238E` is zero in all calls, meaning the destination pointer comes from ROM tables inside `sub_238E` itself.
+- The first call uses a distinct ROM region (0x17FE0) slightly before the 0x18000 block, likely to set background colours.

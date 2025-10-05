@@ -1,0 +1,72 @@
+PGM BIOS Function: sub_3E3C (Render Coin/Service Screen)
+------------------------------------------------------
+Summary: Builds the service-mode counter display: renders column headers via sub_37D6 and loc_3984, and places explanatory strings (Coin 1, Coin 2, Service, Total) using the text routine sub_6E72.
+
+Argument mapping:
+- arg_0 (d2): index of the first counter column to show (0?7).
+
+Supporting assets:
+- String literals at 0x1356E ("Coin 1"), 0x13574 ("Coin 2"), 0x1357A ("Service"), 0x13582 ("Total").
+- Layout data blocks at 0xE0EC / 0xE0F4 used by loc_3984 for additional formatting.
+- Numeric rendering helpers: sub_37D6 (row formatter) and sub_7932/sub_7F6A via loc_3984.
+
+Assembly excerpt:
+`sm
+0x3e3c: move.l d2, -(sp)
+0x3e3e: move.l 4(sp), d2            ; selected column
+0x3e42: pea    (0x32).w
+0x3e46: pea    (3).w
+0x3e4a: pea    (2).w
+0x3e4e: bsr.w  sub_37D6             ; draw initial column block
+
+0x3e52: move.w d2, d0
+0x3e54: move.l d0, -(sp)
+0x3e56: pea    (0xE0F4).l
+0x3e5c: pea    (0x0004).w           ; x coordinate
+0x3e60: pea    (0xE0EC).l
+0x3e66: pea    (0x0004).w           ; y coordinate
+0x3e6a: pea    (1).w
+0x3e6e: bsr.w  loc_3984             ; draw column headers / separators
+
+; Display text labels
+0x3e76: pea    ("Coin 1").l
+0x3e7c: pea    (1).w
+0x3e80: clr.l  -(sp)
+0x3e82: pea    (5).w
+0x3e86: pea    (0x11).w             ; (x,y)
+0x3e8a: clr.l  -(sp)
+0x3e8c: jsr    (sub_6E72).l
+
+0x3e92: pea    ("Coin 2").l
+...
+0x3eb2: pea    ("Service").l
+...
+0x3ed6: pea    ("Total").l         ; only when column != 7
+...
+0x3efa: move.l (sp)+, d2
+0x3efc: rts
+`
+
+Reconstructed C-style pseudocode:
+`c
+void pgm_render_coin_screen(uint32_t column_index) {
+    pgm_render_meter_rows(column_index, /* table */ (void *)0xE0EC, /* count */ 2);
+
+    loc_3984(column_index, (void *)0xE0EC, (void *)0xE0F4, 1, 4, 4);
+
+    sub_6E72(0, 0x11, 5, 0, 1, "Coin 1");
+    sub_6E72(0, 0x20, 5, 0, 1, "Coin 2");
+    sub_6E72(0, 0x2E, 5, 0, 0, "Service");
+
+    if (column_index != 7) {
+        uint32_t total_x = column_index * 2 + 3;
+        sub_6E72(0, total_x, 3, 0, 1, "Total");
+    }
+}
+`
+
+Analysis notes:
+- The routine first leverages sub_37D6 to layout numeric columns, then uses loc_3984 (in the same module) to draw separators/headers.
+- Afterwards it prints three mandatory labels and optionally a ?Total? caption unless the last column (index 7) is selected.
+- Coordinates supplied to sub_6E72 follow the same convention as other text draws (parameters: padding, X tile, Y tile, font id, palette, string pointer).
+- Combined with sub_383C/sub_37D6, this routine forms the complete diagnostics display for coin/service accounting.

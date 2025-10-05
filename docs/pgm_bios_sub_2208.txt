@@ -1,0 +1,55 @@
+PGM BIOS Function: sub_2208 (Palette Slot Release)
+-------------------------------------------------
+Summary: Decrements the active palette slot counter at 0x801F0C, clears the completion flag in the auxiliary table at 0x801EE6, and marks the palette slot's state byte as free.
+
+Argument mapping:
+- arg_0 (D2): slot index (0?3) returned previously by sub_2086.
+
+Data structures touched:
+- 0x801F0C: global uint8_t counter tracking allocated palette slots.
+- Table at 0x801EE6: per-slot uint16_t status words (offset = index * 12) cleared on release.
+- Table at 0x801EDC: palette slot descriptors; state byte at +0 set to 0 when released.
+
+Assembly listing:
+`sm
+0x2208: move.l  d2, -(sp)
+0x220a: move.l  4(sp), d2
+0x220e: subq.b  #1, (0x801F0C).l      ; decrement active slots
+0x2214: move.w  d2, d0
+0x2216: move.w  d0, d1
+0x2218: add.w   d0, d0
+0x221a: add.w   d1, d0
+0x221c: lsl.w   #2, d0                ; offset = index * 12
+0x221e: movea.l #0x801EE6, a0
+0x2224: clr.w   (a0,d0.w)             ; clear status word
+0x2228: move.w  d2, d0
+0x222a: move.w  d0, d1
+0x222c: add.w   d0, d0
+0x222e: add.w   d1, d0
+0x2230: lsl.w   #2, d0                ; offset = index * 12
+0x2232: movea.l #0x801EDC, a0
+0x2238: clr.b   (a0,d0.w)             ; state = 0 (free)
+0x223c: move.l  (sp)+, d2
+0x223e: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_slot_release(int index) {
+    volatile uint8_t  *const active_count = (uint8_t *)0x801F0C;
+    volatile uint16_t *const status_table = (uint16_t *)0x801EE6;
+    volatile uint8_t  *const slot_table   = (uint8_t  *)0x801EDC;
+
+    (*active_count)--;
+
+    size_t offset = (size_t)index * 12;
+    status_table[offset / 2] = 0;          /* clear pending status */
+    slot_table[offset] = 0;                /* reset state */
+}
+`
+
+Analysis notes:
+- Complements sub_2086 (allocator) and sub_21AC (configuration) by returning the slot to the free pool.
+- Clears the auxiliary status word before freeing the descriptor, ensuring subsequent queries via sub_2280 observe the slot as available.
+- No validation on the slot index; callers must guarantee 0?3 range.
+- The status table appears aligned with slot descriptors (12-byte stride for both), confirming the shared structure layout.

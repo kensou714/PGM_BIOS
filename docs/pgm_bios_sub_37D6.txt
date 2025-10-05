@@ -1,0 +1,70 @@
+PGM BIOS Function: sub_37D6 (Render Meter Row)
+---------------------------------------------
+Summary: Iterates over a block of accounting counters and, for each entry, builds a numeric sprite strip via sub_7F6A and then blits it on screen using the tile renderer sub_7932. Used by the service UI to print a column of values.
+
+Arguments (68K stack convention):
+- arg_0: starting counter index (row number).
+- arg_4: pointer to the packed counter table (each entry read by sub_7932).
+- arg_A: row count to draw (word).
+
+External helpers:
+- sub_7F6A: formats a decimal value into tiles (takes buffers + digit count, returns pointer to generated graphic).
+- sub_7932: renders a text/tile row at the requested position.
+- Data tables: unk_500 tile template and unk_18514 layout metadata.
+
+Assembly excerpt:
+`sm
+0x37d6: link   a6, #0
+0x37da: movem.l d2-d3, -(sp)
+0x37de: move.l arg_0(a6), d3        ; current row index
+0x37e2: moveq   #0, d2              ; loop counter
+0x37e4: bra.s   0x3828              ; jump to loop condition
+
+; Loop body (one row)
+0x37e6: pea     (1).w               ; sub_7F6A: width=1?
+0x37ea: pea     (1).w
+0x37ee: clr.l   -(sp)               ; attributes
+0x37f0: clr.l   -(sp)
+0x37f2: pea     (0x500).w           ; tile buffer base
+0x37f6: clr.l   -(sp)               ; destination pointer
+0x37f8: jsr     (sub_7F6A).l
+0x37fe: addq.l  #8, sp              ; drop topmost args
+0x3800: move.l  d0, -(sp)           ; push formatted sprite ptr
+0x3802: pea     (6).w               ; width on screen
+0x3806: clr.l   -(sp)               ; palette/flags
+0x3808: pea     (1).w               ; font id
+0x380c: pea     (unk_18514).l       ; layout definition
+0x3812: move.l  arg_4(a6), -(sp)    ; source counter table
+0x3816: move.l  d3, -(sp)           ; row index
+0x3818: clr.l   -(sp)               ; reserved
+0x381a: jsr     (sub_7932).l        ; render row
+0x3820: lea     0x30(sp), sp        ; drop arguments
+0x3824: addq.l  #1, d2              ; next row
+0x3826: addq.l  #1, d3              ; increment row index
+0x3828: move.w  arg_A(a6), d0
+0x382e: cmp.l   d2, d0
+0x3830: bgt.s   0x37e6              ; continue loop
+0x3832: movem.l (sp)+, d2-d3
+0x3838: unlk   a6
+0x383a: rts
+`
+
+Reconstructed C-style pseudocode:
+`c
+void pgm_render_meter_rows(uint32_t start_index,
+                           const void *counter_table,
+                           uint16_t row_count) {
+    uint32_t row = start_index;
+
+    for (uint16_t i = 0; i < row_count; ++i, ++row) {
+        const void *sprite = sub_7F6A(0, 0, 0x500, 0, 1, 1);
+        sub_7932(0, row, counter_table, (void *)0x18514, 1, 0, 6, sprite);
+    }
+}
+`
+
+Analysis notes:
+- The routine is parameterised by a start index, allowing caller to page through counters.
+- The helper sub_7F6A most likely converts the numeric value at the current row into a sprite strip which sub_7932 then blits at the proper coordinates.
+- Stack cleanup (lea 0x30(sp), sp) confirms eight 4-byte arguments are passed to sub_7932.
+- Called repeatedly by higher-level menu drawing code (see sub_3E3C and sub_383C) to populate accounting screens.

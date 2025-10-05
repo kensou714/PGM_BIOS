@@ -1,0 +1,32 @@
+PGM BIOS Helper: sub_D9B2 (Safe Block Copy)
+----------------------------------------
+Summary: Copies a block of bytes from source to destination while preserving alignment and handling arbitrary lengths. Acts like a robust `memmove` implementation that optimises for word/long transfers when possible and falls back to byte copies for misaligned regions.
+
+Parameters (68K stack order):
+- arg_0: destination pointer.
+- arg_7: alignment hint (byte). Determines whether the copy needs to adjust for misalignment.
+- arg_8: source pointer.
+- (length provided via register D1 before the call).
+
+Behaviour:
+1. Saves D2 (temporary register).
+2. Checks length (`d1`) and alignment. If length ? 7, executes a simple byte loop.
+3. For longer copies:
+   - Aligns destination by copying leading bytes (`dbf` loops with `move.b`).
+   - Performs fast longword copies (`move.l`) in a loop, handling remainder in words/bytes as needed.
+   - Handles cases where both source and destination share alignment vs. misaligned scenarios.
+4. Restores D2 and returns destination pointer.
+
+Practical interpretation:
+```c
+void *pgm_copy_aligned(void *dst, const void *src, uint32_t len, uint8_t align_hint);
+```
+The align hint dictates how the function treats initial misalignment (e.g., when dest&3 != 0).
+
+Usage:
+- Called by text renderer `sub_6E72`, ranking string manipulation (`sub_6DEE`), palette initialisers, etc., whenever copying into VRAM or shared buffers.
+- Provides a safe copy even with overlapping regions due to byte-wise fallbacks.
+
+Notes:
+- The helper relies on the caller to supply length in D1; most call sites prepare the stack and registers exactly before invoking it.
+- When re-implementing BIOS behaviour, treat this helper as a generic `memmove` equivalent with slight alignment optimisations.

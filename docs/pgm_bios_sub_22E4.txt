@@ -1,0 +1,63 @@
+PGM BIOS Function: sub_22E4 (Palette Job From LUT)
+-------------------------------------------------
+Summary: Builds a palette-update request by combining lookup tables at 0xDDB4/0xDDA8, then dispatches the synchronous palette job handler (sub_22A0).
+
+Inputs:
+- arg_0: palette LUT index (0?n). Used to read an 8-bit value from table 0xDDB4 and a base offset from table 0xDDA8.
+- arg_4: pointer to palette data source (passed to sub_D80A for address math).
+- arg_8: size/count parameter forwarded to sub_22A0 (eventually stored as 16-bit delay inside the slot structure).
+
+Lookup tables:
+- 0xDDB4: byte table of palette band identifiers.
+- 0xDDA8: table of 32-bit base offsets to add to computed addresses.
+
+Call graph:
+- sub_D80A: helper returning an address offset derived from LUT value + rg_4.
+- sub_22A0: palette job dispatcher (alloc/config/wait/release).
+
+Assembly listing:
+`sm
+0x22e4: link   a6, #0
+0x22e8: move.l d2, -(sp)
+0x22ea: move.l arg_0(a6), d2
+0x22ee: movea.l #0xDDB4, a0
+0x22f4: move.b (a0,d2.l), d0
+0x22f8: andi.l #0xFF, d0
+0x22fe: move.l d0, -(sp)
+0x2300: movea.l #0xDDB4, a0
+0x2306: move.b (a0,d2.l), d0
+0x230a: andi.l #0xFF, d0
+0x2310: move.l arg_4(a6), d1
+0x2314: jsr     sub_D80A            ; returns offset based on LUT + arg_4
+0x231a: add.l  d0, d0
+0x231c: move.l d2, d1
+0x231e: lsl.l  #2, d1
+0x2320: movea.l #0xDDA8, a0
+0x2326: add.l  (a0,d1.l), d0        ; add base offset from table
+0x232a: move.l d0, -(sp)
+0x232c: move.l arg_8(a6), -(sp)
+0x2330: bsr.w  sub_22A0
+0x2334: move.l var_4(a6), d2
+0x2338: unlk   a6
+0x233a: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_dispatch_lut(uint32_t index, void *source, uint32_t param2) {
+    uint8_t band  = *((uint8_t *)0xDDB4 + index);
+    uint32_t base = *((uint32_t *)0xDDA8 + index);
+
+    uint32_t offset = sub_D80A(source, band);  /* returns byte offset */
+    offset *= 2;                               /* convert to word units */
+    offset += base;
+
+    pgm_palette_dispatch(index, offset, param2); /* sub_22A0 wraps queue */
+}
+`
+
+Analysis notes:
+- Uses the same LUT value twice: once as argument to sub_D80A and again to compute the job address.
+- The shift/add sequence (dd.l d0, d0) doubles the offset returned from sub_D80A, suggesting the helper produces word indexes.
+- Table at 0xDDA8 likely stores per-band base addresses (e.g., palette banks). Combined offset is the final address or index fed into the palette job queue.
+- The value pushed before sub_22A0 corresponds to the slot index parameter; here it is derived from the computed offset, so ensure sub_22A0?s prototype matches when re-implemented.

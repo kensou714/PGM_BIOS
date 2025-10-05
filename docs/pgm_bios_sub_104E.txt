@@ -1,0 +1,57 @@
+PGM BIOS Function: sub_104E (Write Timer Slot)
+---------------------------------------------
+Summary: Validates a timer slot index, then stores a 32-bit value into the BIOS timer table at 0x801550. Errors are reported through sub_7FCC but execution continues, matching the behaviour of the companion read/release helpers.
+
+Proposed prototype:
+    void pgm_bios_timer_write(int index, uint32_t value);
+
+Argument mapping:
+- arg_0 (D2): timer slot index (0?3 expected).
+- arg_4: 32-bit payload to write into the slot.
+
+Global state involved:
+- (uint32_t *)0x801550: timer descriptor table shared with sub_F40 / sub_F8A / sub_1012.
+- Diagnostic strings at 0x12ddc / 0x12dfa / 0x004c routed to sub_7FCC when validation fails.
+
+Assembly listing:
+```asm
+0x104e: link   a6, #0
+0x1052: move.l d2, -(sp)
+0x1054: move.l arg_0(a6), d2
+0x1058: tst.l  d2
+0x105a: blt.s  0x1062                ; negative index -> warn
+0x105c: moveq  #4, d0
+0x105e: cmp.l  d2, d0
+0x1060: bgt.s  0x1078               ; index < 4? continue
+0x1062: pea    (0x004c).w
+0x1066: pea    (0x12dfa).l
+0x106c: pea    (0x12ddc).l
+0x1072: jsr    (sub_7FCC).l         ; BIOS diagnostics helper
+0x1078: move.w d2, d0
+0x107a: lsl.w  #2, d0               ; offset = index * 4
+0x107c: movea.l #0x801550, a0
+0x1082: move.l arg_4(a6), (a0,d0.w) ; store payload
+0x1088: move.l var_4(a6), d2        ; restore saved D2
+0x108c: unlk   a6
+0x108e: rts
+```
+
+Reconstructed C implementation:
+```c
+void pgm_bios_timer_write(int index, uint32_t value) {
+    volatile uint32_t *const timer_slots = (uint32_t *)0x801550;
+
+    if (index < 0 || index >= 4) {
+        sub_7FCC("Handle %0 handle map", "C Imer C", 0x4C);
+        /* BIOS still performs the write, so index must be trusted. */
+    }
+
+    timer_slots[index] = value;
+}
+```
+
+Analysis notes:
+- Uses a stack frame via `link/unlk` because it passes its parameters to called routines in higher-level code (see sub_1188).
+- Shares identical validation flow with sub_1012/sub_F8A, reinforcing the expectation that callers must pre-validate indices when porting the logic.
+- Writing zero is how sub_F40 marks a slot as allocated; other values (e.g., function pointers) are written by higher-level orchestration such as sub_1188.
+- No explicit return value; D0 is left holding the final table offset but not used by the caller.

@@ -1,0 +1,78 @@
+PGM BIOS Function: sub_250A (Configure Fade Slot)
+-----------------------------------------------
+Summary: Writes fade parameters into a slot within the fade job table at 0x801F0E and marks the slot active (state = 3). Each slot spans 0x52 bytes and is first allocated via sub_2466.
+
+Argument mapping (stack layout):
+- arg_0: fade slot index (0?3).
+- arg_4: pointer or base address stored at offset +0x02.
+- arg_B/arg_F/arg_13: 8-bit parameters written to offsets +0x06/+0x07/+0x08 (e.g., colour deltas or mode flags).
+- arg_14: 32-bit parameter stored at offset +0x0E (likely duration or pointer).
+- arg_1B/arg_1F/arg_23: additional 8-bit parameters placed at offsets +0x0C/+0x09/+0x01 respectively.
+
+Structure layout (per slot, 0x52 bytes):
+- +0x00: state byte.
+- +0x01: parameter (arg_23).
+- +0x02: 32-bit pointer/base (arg_4).
+- +0x06,+0x07,+0x08: 8-bit attributes (arg_B/F/13).
+- +0x09: 8-bit attribute (arg_1F).
+- +0x0A: cleared to 0 here (likely status flag).
+- +0x0B: palette slot index assigned by sub_2466.
+- +0x0C: 8-bit attribute (arg_1B).
+- +0x0E: 32-bit parameter (arg_14).
+
+Assembly listing:
+`sm
+0x250a: move.l  4(sp), d0
+0x250e: move.l  d0, d1
+0x2510: lsl.l   #2, d0
+0x2512: add.l   d1, d0
+0x2514: lsl.l   #3, d0
+0x2516: add.l   d1, d0
+0x2518: add.l   d0, d0             ; offset = index * 0x52
+0x251a: movea.l #0x801F0E, a0
+0x2520: adda.l  d0, a0
+0x2522: movea.l a0, a1
+0x2524: move.b  0x0F(sp), 6(a1)
+0x252a: move.b  0x13(sp), 7(a1)
+0x2530: move.b  0x17(sp), 8(a1)
+0x2536: move.l  0x18(sp), 0x0E(a1)
+0x253c: move.b  0x1F(sp), 0x0C(a1)
+0x2542: move.b  0x23(sp), 9(a1)
+0x2548: clr.b   0x0A(a1)
+0x254c: move.b  0x27(sp), 1(a1)
+0x2552: move.l  8(sp), 2(a1)
+0x2558: move.b  #3, (a1)
+0x255c: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_fade_slot_config(int index,
+                          uint32_t base_ptr,
+                          uint8_t param_b,
+                          uint8_t param_f,
+                          uint8_t param_13,
+                          uint32_t param_14,
+                          uint8_t param_1B,
+                          uint8_t param_1F,
+                          uint8_t param_23) {
+    uint8_t *slot = (uint8_t *)0x801F0E + index * 0x52;
+
+    slot[6]  = param_b;
+    slot[7]  = param_f;
+    slot[8]  = param_13;
+    *(uint32_t *)(slot + 0x0E) = param_14;
+    slot[0x0C] = param_1B;
+    slot[9]  = param_1F;
+    slot[0x0A] = 0;
+    slot[1]  = param_23;
+    *(uint32_t *)(slot + 2) = base_ptr;
+    slot[0]  = 3;                /* mark ready/active */
+}
+`
+
+Analysis notes:
+- Assumes the slot has been allocated via sub_2466 (state set to 1 and palette slot assigned at +0x0B).
+- No validation on index; callers must ensure the slot is valid and currently allocated.
+- The state transition to 3 likely signals the fade processing routine to start using these parameters.
+- Offsets reveal the fade descriptor contains numerous flags and a pointer, indicating complex fade behaviour controlled elsewhere.

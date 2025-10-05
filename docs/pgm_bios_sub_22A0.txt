@@ -1,0 +1,63 @@
+PGM BIOS Function: sub_22A0 (Palette Job Dispatcher)
+---------------------------------------------------
+Summary: Allocates a palette slot, populates it with parameters, waits for the hardware/worker to clear the slot's status word, then releases the slot. Acts as a synchronous wrapper around the palette queue helpers.
+
+Prototype suggestion:
+    void pgm_palette_dispatch(uint32_t param0, uint32_t param1, uint32_t param2);
+
+Argument mapping:
+- arg_0: first parameter passed to sub_21AC (stored at offset +0x02).
+- arg_4: second parameter passed to sub_21AC (stored at offset +0x06).
+- arg_8: third parameter passed to sub_21AC (stored at offset +0x0A as uint16_t).
+
+Call graph:
+- sub_2086: palette slot allocator (returns index or 4 on failure).
+- sub_21AC: populates the slot with the supplied parameters and marks it ready (state = 2).
+- sub_2280: polls the status word (non-zero means busy).
+- sub_2208: releases the slot and decrements the active counter once completion detected.
+
+Assembly listing:
+`sm
+0x22a0: link   a6, #0
+0x22a4: move.l d2, -(sp)
+0x22a6: bsr.w  sub_2086             ; allocate slot
+0x22aa: move.l d0, d2               ; keep slot index
+0x22ac: move.l arg_8(a6), -(sp)
+0x22b0: move.l arg_4(a6), -(sp)
+0x22b4: move.l arg_0(a6), -(sp)
+0x22b8: move.l d2, -(sp)
+0x22ba: bsr.w  sub_21AC             ; configure slot
+0x22be: lea    0x10(sp), sp         ; clean arguments
+0x22c2: move.l d2, -(sp)
+0x22c4: bsr.w  sub_2280             ; poll status
+0x22c8: addq.l #4, sp
+0x22ca: tst.l  d0
+0x22cc: beq.s  0x22c2               ; loop until ready (status == 0)
+0x22ce: move.l d2, -(sp)
+0x22d0: bsr.w  sub_2208             ; release slot
+0x22d4: move.l (sp)+, d2
+0x22d8: unlk   a6
+0x22da: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_palette_dispatch(uint32_t param0, uint32_t param1, uint32_t param2) {
+    int slot = pgm_palette_slot_alloc();           /* sub_2086 */
+
+    pgm_palette_slot_config(slot, param0, param1, (uint16_t)param2);  /* sub_21AC */
+
+    while (pgm_palette_slot_ready(slot) == 0) {    /* sub_2280 */
+        /* busy-wait until hardware clears the status */
+    }
+
+    pgm_palette_slot_release(slot);                /* sub_2208 */
+}
+`
+
+Analysis notes:
+- Provides a synchronous API for palette updates: caller blocks until the operation completes.
+- Assumes the allocator succeeds; if sub_2086 returns 4 (failure) the subsequent routines will operate on out-of-range data. Upstream code should check for this condition.
+- The busy-wait loop has no timeout; the BIOS expects the hardware interrupt or worker routine to clear the status word eventually.
+- param2 is truncated to 16 bits inside sub_21AC; adjust prototypes accordingly if wider values are not needed.
+- Completes the palette job lifecycle, mirroring the timer dispatcher pattern found earlier (sub_1188).
