@@ -1,0 +1,22 @@
+
+PGM BIOS Function: sub_801C (Fetch Current Interrupt Level)
+-----------------------------------------------------------
+Summary: Reads the Motorola 68000 status register and returns the current interrupt mask (bits 10..8). The helper preserves D2, extracts the mask, and leaves the value in D0 for the caller.
+
+Behaviour:
+1. Push D2, then copy the status register (SR) into D0.
+2. Mirror SR into D2 so the caller can examine the full register if needed.
+3. AND D0 with 0x0700 to isolate the interrupt mask bits.
+4. Arithmetic-shift right by 8 so the mask becomes a plain 0..7 value in D0.
+5. Restore D2 and return.
+
+C-style equivalent:
+    uint16_t pgm_get_sr_mask(void)
+    {
+        uint16_t sr = m68k_get_sr();  // read status register
+        return (sr & 0x0700) >> 8;
+    }
+
+Notes:
+- Callers use this in tandem with sub_8002 to snapshot and later restore the interrupt priority level.
+- The routine leaves the original SR in D2; sub_8038 relies on this to store the raw mask for debugging.

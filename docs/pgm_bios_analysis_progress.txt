@@ -59,12 +59,39 @@ Completed
 48. Helper sub_D80A (docs/pgm_helper_sub_D80A.txt) ? stride/index multiply.
 49. Helper sub_D9B2 (docs/pgm_helper_sub_D9B2.txt) ? safe block copy.
 50. Helper sub_7F6A (docs/pgm_helper_sub_7F6A.txt) ? sprite strip builder.
+51. sub_7222  (docs/pgm_bios_sub_7222.txt)
+52. sub_74CC  (docs/pgm_bios_sub_74CC.txt)
+53. sub_7516  (docs/pgm_bios_sub_7516.txt)
+54. sub_7932  (docs/pgm_bios_sub_7932.txt)
+55. sub_7FCC  (docs/pgm_bios_sub_7FCC.txt)
+56. sub_8002  (docs/pgm_bios_sub_8002.txt)
+57. sub_801C  (docs/pgm_bios_sub_801C.txt)
+58. sub_8038  (docs/pgm_bios_sub_8038.txt)
+59. sub_804E  (docs/pgm_bios_sub_804E.txt)
+60. sub_8120  (docs/pgm_bios_sub_8120.txt)
+61. sub_B512  (docs/pgm_bios_sub_B512.txt)
+62. sub_B536  (docs/pgm_bios_sub_B536.txt)
+63. sub_B55E  (docs/pgm_bios_sub_B55E.txt)
+64. sub_B586  (docs/pgm_bios_sub_B586.txt)
+65. sub_B5BC  (docs/pgm_bios_sub_B5BC.txt)
+66. sub_B666  (docs/pgm_bios_sub_B666.txt)
+67. sub_B6C6  (docs/pgm_bios_sub_B6C6.txt)
+68. sub_C876  (docs/pgm_bios_sub_C876.txt)
+69. sub_D394  (docs/pgm_bios_sub_D394.txt)
+70. sub_D3B2  (docs/pgm_bios_sub_D3B2.txt)
+71. sub_D58E  (docs/pgm_bios_sub_D58E.txt)
+72. sub_D7FE  (docs/pgm_bios_sub_D7FE.txt)
+73. sub_D8F4  (docs/pgm_bios_sub_D8F4.txt)
+74. sub_D930  (docs/pgm_bios_sub_D930.txt)
+75. sub_DA7C  (docs/pgm_bios_sub_DA7C.txt)
+76. sub_DA94  (docs/pgm_bios_sub_DA94.txt)
 
 In Progress / TODO
 ------------------
-- Map remaining branches of sub_6E72 (loc_6F6A, loc_6FCE, loc_701A) to capture full character-handling logic.
-- Document math helpers `sub_D874`, `sub_D8D8`, `sub_DA16` which appear in text/ranking routines.
-- Analyse higher-level controllers (e.g., sub_6F6A entry points, sub_7222, sub_74CC) once helper coverage is complete.
+- Capture sample output traces for sub_6E72 (newline/tab cases) to validate the documented branch behaviour.
+- Document divide helpers `sub_D838` and `sub_D8F4` used by the BCD converters.
+- Analyse higher-level controllers (service state machines such as sub_6F6A / sub_7222 callsites) once text renderer traces are validated.
+- Next BIOS targets: (all documented).
 
 Workflow Reminders
 ------------------

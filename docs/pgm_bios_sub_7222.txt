@@ -1,0 +1,44 @@
+PGM BIOS Function: sub_7222 (Service printf Formatter)
+------------------------------------------------------
+Summary: Builds a formatted ASCII string for the service-menu text renderer. It implements a small printf-style parser that supports width, left/zero padding, and the specifiers needed by the BIOS UI. The output is written into a caller-supplied buffer and terminated with 0x00.
+
+Prototype (conceptual):
+    char *pgm_service_vsprintf(char *dst, const char *fmt, uint8_t **arg_list);
+
+Inputs:
+- arg_0: destination buffer (must be large enough; callers provide ~0x40 bytes).
+- arg_4: format string pointer.
+- arg_8: address of the current var-arg cursor (a pointer that advances by 4 bytes per fetched argument).
+
+Parser features:
+- Literal text is copied verbatim until a % token is encountered.
+- Flags: only '-' (left alignment) and leading zero insertion are supported. Zero padding is activated when the width field begins with 0.
+- Field width: decimal digits accumulate into d2. The helper sub_DA7C validates each digit and returns zero once a non-digit is found, at which point parsing stops.
+- The pad character lives in d3 (space by default, zero when 0-prefixed widths are requested).
+
+Supported conversions:
+- %C : fetches a 32-bit value, keeps the low byte, writes a single character.
+- %U : unsigned decimal. sub_D930 performs the conversion into a temporary buffer, after which sub_6DEE handles padding/alignment.
+- %D / %I : signed decimal. Negative values are detected via bit 31; sub_D7FE obtains the absolute value while sub_6DEE prefixes a minus sign when needed.
+- %L : decimal rendering intended for 32-bit counters with optional clipping support (logic mirrors the %U path but honours the overlay_skip parameter).
+- %X : uppercase hexadecimal. The radix (0x10) is passed to sub_D930 before calling sub_6DEE.
+- %B : binary output. sub_D930 is invoked with radix 2 to build the string, then padded via sub_6DEE.
+- %S : copies a zero-terminated string. The pointer is dereferenced, duplicated into the local buffer, and forwarded to sub_6DEE for alignment.
+- %% : inserts a single percent character.
+
+Helper usage:
+- sub_D930(number, base, buffer, width) converts integers to ASCII according to the specified radix.
+- sub_D7FE handles signed magnitudes for %D/%I.
+- sub_6DEE orchestrates padding, alignment, and insertion of the formatted token into the growing destination buffer.
+- sub_DA7C / sub_DA94 validate digits and uppercase letters while parsing width and specifier characters.
+
+Output flow:
+1. Every formatted token is assembled in the stack buffer var_52 (at most 0x20 bytes).
+2. sub_6DEE inserts the token into the main output buffer, performing left/right padding with the selected fill character.
+3. After each token is finalised, the routine appends it to the running output string (pointed to by a4) and advances both source and destination cursors.
+4. When the format string ends, the function appends a null terminator to dst and returns control to the caller.
+
+Analysis notes:
+- The argument list pointer (arg_8) is updated in place so callers can invoke sub_7222 multiple times while walking a single var-arg array.
+- Width values greater than the internal temporary buffer capacity are not guarded; the BIOS never emits widths above 0x14.
+- The routine assumes arguments are 32-bit quantities (chars are promoted); there is no special handling for 64-bit values.

@@ -1,0 +1,26 @@
+﻿PGM BIOS Function: sub_B666 (Read RTC/Register Block -> Decimal Bytes)
+-------------------------------------------------------------------
+Summary: Polls eight sequential registers from the protection/RTC device, deserialises each into a BCD byte, converts it to a binary 0–99 value, and stores the result back into the caller-provided buffer.
+
+Assembly highlights:
+- Starts with `sub_B55E(0x0F)` to reset/prime the serial link to the auxiliary device.
+- Loop index `d2` walks 0..7; each pass issues `sub_B55E(index + 2)` (select register), then calls `sub_B5BC` to read an 8-bit serial value into `buffer[index]`.
+- The freshly read BCD byte is converted to binary using `sub_B512` before being written back.
+- Uses the same buffer both as temporary storage for the serial read and as the binary output destination.
+
+Behaviour:
+```c
+void pgm_rtc_read_block(uint8_t *dest8) {
+    pgm_push_low_nibble_bits(0x0F);   // sub_B55E
+    for (uint8_t i = 0; i < 8; ++i) {
+        pgm_push_low_nibble_bits((uint8_t)(i + 2));   // select register i
+        pgm_read_rtc_serial_byte(&dest8[i]);          // sub_B5BC
+        dest8[i] = pgm_bcd_byte_to_uint(dest8[i]);    // sub_B512
+    }
+}
+```
+
+Analysis notes:
+- The `(i + 2)` selector matches hardware docs where register IDs start at 2 (0/1 reserved for control).
+- Because `sub_B512` ignores invalid BCD nibbles, upstream data should be validated if the device can return out-of-range digits.
+- The handshake byte `0x0F` is a typical “burst read” enable pattern on IGS protection chips, preparing the shift register before reading.

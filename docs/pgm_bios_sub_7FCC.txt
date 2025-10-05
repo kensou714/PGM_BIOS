@@ -1,0 +1,43 @@
+PGM BIOS Function: sub_7FCC (Fatal Assert Presenter)
+---------------------------------------------------
+Summary: Handles unrecoverable BIOS assertions. The routine preserves the current interrupt mask, raises the CPU to level 7 (mask all interrupts), repopulates the service-menu palette, renders an error banner using sub_7516, and then spins forever. This is the code path hit by the CIMAGE range checks and other internal assertions.
+
+Parameters (callers push in order: message, file, line):
+- arg_0: pointer to the text describing the failure (e.g. "n>=0 && n<img->totpic").
+- arg_4: pointer to the source filename string.
+- arg_8: line number (unsigned integer) taken from the original C assert.
+
+Behaviour outline:
+1. Call sub_8038 to capture the current status register mask (via sub_801C) and raise the interrupt mask to level 7 using sub_8002(7). The original mask is saved to unk_803442 for potential restoration if the BIOS ever resumed (it does not here).
+2. Call sub_6C9A to reload the palette rows required by the service text renderer; this guarantees the error banner uses readable colours.
+3. Prepare the stack for sub_7516 as if it were a tiny printf call:
+   - Push arg_0 (description string),
+   - Push arg_8 (line number),
+   - Push arg_4 (filename),
+   - Push the format string "%s %u %s", the literal field count 2, and tilemap descriptor pointer initial_pc (0x00000004).
+   sub_7516 expands these into visual text using the core renderer sub_6E72.
+4. Enter an infinite branch at loc_7FFC, halting the BIOS. No return path exists; the system must be reset.
+
+C-style sketch:
+    void pgm_fatal_assert(const char *expr, const char *file, unsigned line)
+    {
+        uint16_t old_mask = pgm_capture_sr_mask();   /* sub_8038/sub_801C */
+        (void)old_mask;                              /* stored to unk_803442 */
+        pgm_set_sr_mask(7);                          /* sub_8002 */
+
+        pgm_preset_service_palettes();               /* sub_6C9A */
+
+        pgm_render_service_text(
+            initial_pc,
+            0, 0,
+            "%s %u %s",
+            file, line, expr);
+
+        for (;;) { /* spin */ }
+    }
+
+Analysis notes:
+- sub_7FCC never restores the saved interrupt mask; it assumes the system will be power-cycled after a fatal error.
+- The helper strings ("%s %u %s", "cimage.c", etc.) live near 0x13A70; each assert forwards the literals from the original C macro.
+- Because rendering funnels through sub_7516 and ultimately sub_6E72, the fatal banner reuses the service UI font and layout.
+- Any custom caller must ensure interrupts remain masked or be ready to re-enable them manually using sub_8002 with the stored mask.

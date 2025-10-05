@@ -31,3 +31,77 @@ Analysis notes:
 - Many higher-level UI helpers (sub_3798, sub_3E3C, sub_4958, etc.) wrap this function with specific arguments to draw service text.
 - ROM tables 0xDD9A/0xDD9B provide per-font width/palette values; 0x18500 holds base addresses for font assets.
 - For a faithful reimplementation, focus on the character loop at 0x6F64?0x701A, which applies spacing, loads glyphs, and writes tile codes. Document helper behaviours (sub_D80A, sub_D9B2) for complete understanding.
+
+
+Character loop (loc_6F6A onwards)
+---------------------------------
+-  holds the current character code. Each pass through  fetches the next byte from the source string, sign-extends it into , and branches back to  until a zero terminator is encountered.
+- Control bytes:
+  *  (LF): treat as newline. The code multiplies the glyph height () by the per-row stride () to advance  to the next text row before continuing.
+  *  (TAB-like): consume the following byte and store it in ; subsequent characters use this value as the tile attribute/kerning seed.
+  * Lowercase ASCII 0x61-0x7A are normalised to uppercase by subtracting 0x20. All printable characters then subtract 0x20 so the font tables can index them from zero.
+- Glyph lookup:
+  *  scales the character index by the glyph width ( tiles).
+  * A second  with  (tile rows) converts the per-row displacement.
+  * The sums are added to the base returned by  (cached in ), producing the starting tile code for the glyph.
+- Tile emission (-):
+  *  keeps the start of the current output row;  counts rows emitted;  counts tiles written in the row.
+  * For each tile the routine clears the destination longword, applies the palette bits from  ( into byte 3), writes the tile index from , and auto-increments  so successive tiles pull the next pattern in the font.
+  * Inner loop runs until  (glyph width). The outer loop repeats until  (glyph height), bumping  by  bytes between rows.
+  * After the glyph body is complete  advances by  so the next character starts immediately after the previous one.
+- Termination: when  reads a zero byte the routine drops out of the loop, restores registers, and returns with the tile pointer positioned past the rendered string.
+
+Character loop (loc_6F6A onwards)
+---------------------------------
+-  holds the current character code. Each pass through  fetches the next byte from the source string, sign-extends it into , and branches back to  until a zero terminator is encountered.
+- Control bytes:
+  *  (line feed): multiply the glyph height () by the per-row stride () and advance  so the next characters start on a new row.
+  * : consume the following byte and store it in ; this adjusts the attribute/kerning seed used when tiles are emitted.
+  * Lowercase ASCII 0x61-0x7A are normalised to uppercase by subtracting 0x20. All printable characters then subtract 0x20 again so the font tables can index them from zero.
+- Glyph lookup:
+  *  scales the character index by the glyph width ( tiles).
+  * A second  call with  accounts for the glyph height.
+  * The result is added to the base pointer returned by  (cached in ), producing the starting tile code for the glyph.
+- Tile emission (-):
+  *  keeps the start of the current output row;  counts rows emitted;  counts tiles written within the row.
+  * Each tile write clears the destination longword, applies palette bits from  ( into byte 3), writes the tile index from , and then increments  so the next cell pulls the subsequent tile pattern.
+  * The inner loop runs until  (glyph width). The outer loop repeats until  (glyph height), bumping  by  bytes between rows.
+  * After the glyph body is complete,  advances by  so the next character starts immediately after the previous one.
+- The loop terminates when  reads a zero byte, after which the routine restores registers and returns with the tile pointer positioned past the rendered string.
+
+
+Character loop (loc_6F6A onwards)
+---------------------------------
+-  holds the current character code. Each pass through  fetches the next byte from the source string, sign-extends it into , and branches back to  until a zero terminator is encountered.
+- Control bytes:
+  *  (line feed): multiply the glyph height () by the per-row stride () and advance  so the next characters start on a new row.
+  * : consume the following byte and store it in ; this adjusts the attribute/kerning seed used when tiles are emitted.
+  * Lowercase ASCII 0x61-0x7A are normalised to uppercase by subtracting 0x20. All printable characters then subtract 0x20 again so the font tables can index them from zero.
+- Glyph lookup:
+  *  scales the character index by the glyph width ( tiles).
+  * A second  call with  accounts for the glyph height.
+  * The result is added to the base pointer returned by  (cached in ), producing the starting tile code for the glyph.
+- Tile emission (-):
+  *  keeps the start of the current output row;  counts rows emitted;  counts tiles written within the row.
+  * Each tile write clears the destination longword, applies palette bits from  ( into byte 3), writes the tile index from , and then increments  so the next cell pulls the subsequent tile pattern.
+  * The inner loop runs until  (glyph width). The outer loop repeats until  (glyph height), bumping  by  bytes between rows.
+  * After the glyph body is complete,  advances by  so the next character starts immediately after the previous one.
+- The loop terminates when  reads a zero byte, after which the routine restores registers and returns with the tile pointer positioned past the rendered string.
+
+Character loop (loc_6F6A onwards)
+---------------------------------
+-  holds the current character code. Each pass through  fetches the next byte from the source string, sign-extends it into , and branches back to  until a zero terminator is encountered.
+- Control bytes:
+  *  (line feed): multiply the glyph height () by the per-row stride () and advance  so the next characters start on a new row.
+  * : consume the following byte and store it in ; this adjusts the attribute/kerning seed used when tiles are emitted.
+  * Lowercase ASCII 0x61-0x7A are normalised to uppercase by subtracting 0x20. All printable characters then subtract 0x20 again so the font tables can index them from zero.
+- Glyph lookup:
+  *  scales the character index by the glyph width ( tiles).
+  * A second  call with  accounts for the glyph height.
+  * The result is added to the base pointer returned by  (cached in ), producing the starting tile code for the glyph.
+- Tile emission (–):
+  *  keeps the start of the current output row;  counts rows emitted;  counts tiles written within the row.
+  * Each tile write clears the destination longword, applies palette bits from  ( into byte 3), writes the tile index from , and then increments  so the next cell pulls the subsequent tile pattern.
+  * The inner loop runs until  (glyph width). The outer loop repeats until  (glyph height), bumping  by  bytes between rows.
+  * After the glyph body is complete,  advances by  so the next character starts immediately after the previous one.
+- The loop terminates when  reads a zero byte, after which the routine restores registers and returns with the tile pointer positioned past the rendered string.

@@ -1,0 +1,33 @@
+﻿PGM BIOS Function: sub_B55E (Sound-Port Bit Extractor, 4-bit)
+---------------------------------------------------------
+Summary: Iterates across the lowest four bit positions of the argument byte, masking each bit with a lookup table, right-shifting it into the least significant position, and writing the result to the shared M68K→Z80 sound latch (`pgm_m68k_to_z80_b+1`).
+
+Assembly highlights:
+- 0xB560: loads the bit-mask table at 0xE232.
+- Loop body: `value = (mask_table[i] & input) >> i` with the shift count taken from the loop index (D1).
+- 0xB576: writes the single-bit result (as a 16-bit value) to the sound command register.
+- The loop runs while `i < 4`, covering the low nibble only.
+
+Behaviour:
+1. Initialise loop counter D1 = 0.
+2. For each of the first four entries in the mask table, AND the caller-provided mask byte and arithmetically shift right by the bit index.
+3. Send the extracted bit to the Z80 latch; the higher byte of the word write is ignored by the hardware.
+4. Exit once four bits have been processed.
+
+C-style sketch:
+```c
+void pgm_push_low_nibble_bits(uint8_t mask_bits) {
+    static const uint8_t bit_lut[4] = {
+        /* ROM: 0xE232..0xE235 */
+    };
+    for (uint8_t i = 0; i < 4; ++i) {
+        uint8_t value = (uint8_t)((bit_lut[i] & mask_bits) >> i);
+        *(volatile uint16_t *)0xC00006 = value; // pgm_m68k_to_z80_b+1
+    }
+}
+```
+
+Analysis notes:
+- The ROM table at 0xE232 contains one-hot masks aligned with each bit position; the arithmetic shift discards higher bits and leaves a 0/1 flag.
+- Because the loop is limited to four iterations, this helper is intended for nibble-sized packets (e.g., joystick directions stored 4 bits at a time).
+- The hardware register write uses a word move, but the meaningful payload lives in the low byte.

@@ -1,0 +1,95 @@
+PGM BIOS Function: sub_7932 (CIMAGE Frame Blitter)
+--------------------------------------------------
+Summary: Copies a single frame from a CIMAGE descriptor into the service-menu tilemap. The routine validates the requested frame index, resolves the frame metadata, selects a VRAM plane (0x904000 or 0x900000), and emits tile words row by row with optional XOR blending against per-tile overlay bytes. Callers control clipping and strides so partial updates are possible.
+
+Parameters (observed from the stack frame):
+- arg_0: plane selector (0 -> base 0x904000, 1 -> base 0x900000, other values keep caller supplied base in arg_20/arg_24).
+- arg_4: tile column offset inside the plane.
+- arg_8: tile row offset (before <<2 translation to byte address).
+- arg_C: pointer to the CIMAGE descriptor (frame table + metadata).
+- arg_10: frame index (must satisfy 0 <= index < descriptor->totpic).
+- arg_14: copy flags (bit0 toggles XOR mode when overlay data exists; other bits unused here).
+- arg_18: attribute bits/palette index mixed into the tile attribute byte.
+- arg_1E: signed tile-code bias added to each value fetched from the frame tilemap.
+- arg_20: additional VRAM base offset added after stride calculations (used when arg_0 > 1).
+- arg_24: stride multiplier forwarded to sub_D80A to compute row pitch within the source tilemap.
+- arg_28: overlay skip count consumed after each row (lets caller reuse overlay buffers for clipped regions).
+- arg_2C: outer loop counter (number of strips/rows to draw).
+
+Frame descriptor layout (0x10 bytes per entry):
+- +0x00: uint16_t width in tiles.
+- +0x02: uint16_t height in tiles.
+- +0x04: pointer to tile codes (uint16_t array, row-major order).
+- +0x08: pointer to optional per-tile overlay bytes (nullptr when no overlay is needed).
+
+Behaviour outline:
+1. Bounds check the frame index. If it fails, call sub_7FCC("cimage.c", 0xA1, "n>=0 && n<img->totpic") to display an assert message and halt.
+2. Compute the destination VRAM address base = ((row << 6) + column) << 2 and add the plane base (0x904000 or 0x900000) unless the caller requested a custom base.
+3. Locate the frame descriptor and cache width (d3), height (d6), tilemap pointer (a3), and overlay pointer (a4).
+4. Use var_8 = sub_D80A(width, arg_24) + arg_20 to determine how far to walk the source table between strips and to position the destination for the next row.
+5. Build the attribute template in var_4: palette bits come from arg_18, bit6 is set when arg_14 & 1, and every tile code has arg_1E added before storing.
+6. Choose one of four tile-copy loops:
+   - XOR copy with overlay (arg_14 != 0 and overlay pointer != nullptr): write tiles right-to-left, XOR the attribute byte with overlay bytes.
+   - XOR copy without overlay: same as above but skip the XOR when overlay is absent.
+   - Direct copy with overlay (arg_14 == 0 but overlay exists): write tiles left-to-right and XOR the attribute byte.
+   - Direct copy without overlay: plain copy of tile codes plus attribute template.
+   Each loop advances the destination by 0x100 bytes per row (one tilemap stride) and adjusts the tile/overlay pointers by width - arg_28 elements to support clipping.
+7. Decrement arg_2C, repeat until all requested strips are written, restore registers, and return.
+
+C-style sketch (simplified):
+    void pgm_cimage_blit(const struct CImage *img,
+                         uint32_t plane_mode,
+                         uint32_t column, uint32_t row,
+                         uint32_t frame_index,
+                         uint32_t flags,
+                         uint32_t attr_bits,
+                         int16_t tile_bias,
+                         uint32_t vram_base,
+                         uint32_t stride_factor,
+                         uint32_t overlay_skip,
+                         uint32_t strip_count)
+    {
+        if (!img || frame_index >= img->totpic) {
+            pgm_cimage_assert("cimage.c", 0xA1, "n>=0 && n<img->totpic");
+            return;
+        }
+
+        uint32_t dest = ((row << 6) + column) << 2;
+        if (plane_mode == 0) dest += 0x904000;
+        else if (plane_mode == 1) dest += 0x900000;
+        else dest += vram_base;
+
+        const struct FrameDesc *frame = (const void *)((const uint8_t *)img->frames + frame_index * 0x10);
+        uint16_t width = frame->width;
+        const uint16_t *tiles = (const uint16_t *)frame->tilemap;
+        const uint8_t *overlay = frame->overlay;
+
+        uint32_t tile_stride = sub_D80A(width, stride_factor) + vram_base;
+        uint16_t attr_template = (uint16_t)((attr_bits & 0x1F) << 1);
+        if (flags & 1) attr_template |= 0x40;
+
+        while (strip_count--) {
+            uint32_t count = width;
+            uint32_t dst = dest;
+            const uint16_t *src_tiles = tiles;
+            const uint8_t *src_overlay = overlay;
+
+            while (count--) {
+                uint16_t code = *src_tiles++ + tile_bias;
+                uint16_t attr = attr_template;
+                if (src_overlay) attr ^= *src_overlay++;
+                *(uint32_t *)dst = ((uint32_t)attr << 16) | code;
+                dst += (flags & 1) ? -4 : 4;
+            }
+
+            dest += 0x100;
+            tiles = (const uint16_t *)((const uint8_t *)src_tiles + (width - overlay_skip) * 2);
+            if (overlay) overlay = src_overlay + (width - overlay_skip);
+        }
+    }
+
+Analysis notes:
+- Overlay XOR is used for cursor highlighting in the service menus; when overlay_skip is non-zero the routine copies only the visible portion while keeping overlay pointers aligned.
+- sub_D80A is the standard stride helper (documented separately in docs/pgm_helper_sub_D80A.txt) and must be replicated accurately to avoid addressing bugs.
+- Assertions funnel through sub_7FCC, meaning any misuse of the CIMAGE API will display the compile-time string literals extracted from cimage.c.
+- The routine assumes the frame descriptor table is fully initialised; it never null-checks the tilemap pointer.

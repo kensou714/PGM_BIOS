@@ -1,0 +1,24 @@
+﻿PGM BIOS Function: sub_DA94 (DFBB Table Bit Extractor, Bit1 with Wrap)
+-----------------------------------------------------------------
+Summary: Reads an entry from the 0xDFBB table, checks bit1, and if set, subtracts 0x20 from the index before returning it. Used to fold menu indices that share resources once they cross the 0x20 boundary.
+
+Assembly highlights:
+- Loads the `index` argument into D2 and grabs the table byte at `0xDFBB + index`.
+- Masks the byte with 0x02 to test bit1.
+- If bit1 == 0 → returns the original index.
+- If bit1 == 1 → returns `index - 0x20`.
+
+C-style sketch:
+```c
+uint32_t pgm_dfbb_wrap_index(uint32_t index) {
+    uint8_t flags = *((uint8_t *)0xDFBB + index);
+    if (flags & 0x02)
+        return index - 0x20;
+    return index;
+}
+```
+
+Analysis notes:
+- Assumes indices with the wrap bit set are ≥ 0x20; the BIOS tables ensure this, so the subtraction stays non-negative.
+- Pairs with `sub_DA7C`, which exposes bit2 from the same table; together they inform layout code whether to shift columns and which palette to use.
+- D2 is preserved across the call, so callers relying on its value post-call should read the result (D0) instead.

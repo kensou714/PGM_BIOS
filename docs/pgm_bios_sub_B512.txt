@@ -1,0 +1,28 @@
+﻿PGM BIOS Function: sub_B512 (Packed BCD Byte -> Integer)
+---------------------------------------------------
+Summary: Decodes a packed BCD byte (high nibble = tens, low nibble = units) into a binary integer. Widely used when parsing RTC values and score tables stored as BCD.
+
+Assembly highlights:
+- 0xB518?0xB520: isolates the high nibble and converts it into a base-ten value (n * 10).
+- 0xB52A?0xB530: masks the low nibble and adds it to the accumulator.
+- 0xB532: restores D2 and returns with the computed integer in D0.
+
+Behaviour:
+1. Preserve D2 because the caller may rely on it.
+2. Extract the high nibble, multiply by 10 (via 4x + 1x followed by doubling).
+3. Add the low nibble to complete the decimal value.
+4. Return the result in D0.
+
+C-style sketch:
+```c
+uint16_t pgm_bcd_byte_to_uint(uint8_t packed_bcd) {
+    uint8_t tens = (packed_bcd >> 4) & 0x0F;
+    uint8_t ones = packed_bcd & 0x0F;
+    return (uint16_t)(tens * 10 + ones);
+}
+```
+
+Analysis notes:
+- Only the low byte of the argument is examined; higher bits are ignored.
+- No range checking is performed, so invalid BCD digits (>9) spill directly into the decimal output.
+- D1 is used as a temporary but is freely clobbered; callers must not expect it to survive.

@@ -1,0 +1,24 @@
+﻿PGM BIOS Function: sub_DA7C (DFBB Table Bit Extractor, Bit2)
+-------------------------------------------------------
+Summary: Returns the bit-2 flag from the lookup table at 0xDFBB. The table stores per-entry configuration bits; this helper isolates whether the specified entry carries the “0x4” attribute.
+
+Assembly:
+  DA7C: move.l arg_0(sp), d0
+  DA80: movea.l #0xDFBB, a0
+  DA86: move.b (a0,d0.l), d0
+  DA8A: ext.w d0
+  DA8C: andi.l #4, d0
+  DA92: rts
+
+Behaviour:
+```c
+uint16_t pgm_dfbb_flag_bit2(uint32_t index) {
+    uint8_t entry = *((uint8_t *)0xDFBB + index);
+    return (entry & 0x04);    // returns 0 or 4
+}
+```
+
+Analysis notes:
+- The return value is either 0 or 4 (not normalised to 0/1). Callers typically treat it as a mask to OR into attribute words.
+- The table at 0xDFBB also feeds sub_DA94; together they expose independent flag bits (bit1 vs bit2) for menu layouts.
+- No bounds checking: the caller must ensure `index` stays within the table.

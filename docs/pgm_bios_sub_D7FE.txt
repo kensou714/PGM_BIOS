@@ -1,0 +1,20 @@
+﻿PGM BIOS Function: sub_D7FE (Absolute Value Helper)
+---------------------------------------------
+Summary: Returns the absolute value of a 32-bit integer. If the input is negative, it negates the argument; otherwise it returns unchanged.
+
+Assembly:
+  D7FE: move.l arg_0(sp), d0
+  D802: bpl.s D806         ; if positive or zero, skip
+  D804: neg.l d0
+  D806: rts
+
+C-style equivalent:
+```c
+int32_t pgm_abs32(int32_t value) {
+    return value < 0 ? -value : value;
+}
+```
+
+Analysis notes:
+- No overflow handling is provided; passing 0x80000000 will still yield 0x80000000 due to two’s-complement behaviour, which matches 68000 semantics.
+- This helper appears in score/time conversion code where values may be signed but need absolute magnitude for display.

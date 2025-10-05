@@ -1,0 +1,42 @@
+﻿PGM BIOS Function: sub_B5BC (Latch RTC Bitstream Into Byte)
+------------------------------------------------------
+Summary: Reads eight successive bits from the protection/RTC port at 0xC00007, aligns each bit using the 0xE232 mask table, and aggregates the result into the caller-provided byte buffer. Used by the BIOS to poll the real-time clock / security device and reassemble its serial output into a parallel byte.
+
+Assembly highlights:
+- 0xB5C2: zero the output byte before accumulation.
+- Loop (i = 0..7):
+  * `move.b (pgm_rtc).l, d0` fetches the next bit from the hardware.
+  * `lsl.b d2, d0` shifts the bit into the target position for this index.
+  * `and.b (a0,d1.w), d0` applies the LUT mask (one-hot at position i).
+  * `or.b d0, (a1)` sets or clears the corresponding bit in the result byte.
+- Restores D2 on exit.
+
+Behaviour:
+1. Clear the destination byte referenced by the caller.
+2. For each bit position 0..7:
+   - Read the RTC/protection port.
+   - Shift the sample left by the current index.
+   - Mask it with the ROM table entry to obtain a single aligned bit value.
+   - OR it into the output accumulator.
+3. Return the reconstructed byte via the pointer argument.
+
+C-style sketch:
+```c
+void pgm_read_rtc_serial_byte(uint8_t *out_value) {
+    static const uint8_t bit_lut[8] = {
+        /* ROM: 0xE232..0xE239 */
+    };
+    uint8_t result = 0;
+    for (uint8_t i = 0; i < 8; ++i) {
+        uint8_t sample = pgm_rtc_read();      // hardware at 0xC00007
+        sample <<= i;
+        result |= (uint8_t)(sample & bit_lut[i]);
+    }
+    *out_value = result;
+}
+```
+
+Analysis notes:
+- The LUT ensures only the desired bit position is affected each pass; samples outside the one-hot mask are cleared.
+- `pgm_rtc_read()` is effectively an alias for reading `(pgm_rtc).l`; the BIOS expects the peripheral to advance its internal shift register on every read.
+- Because the routine overwrites the output byte on entry, callers should supply a valid pointer and do not need to initialise the storage.

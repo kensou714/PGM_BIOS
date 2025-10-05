@@ -1,0 +1,27 @@
+PGM BIOS Function: sub_74CC (Formatted Text Renderer)
+----------------------------------------------------
+Summary: Front-end that formats a printf-style string with sub_7222 and then renders it onto the tilemap via sub_6E72. It exposes the full set of placement parameters (plane, base offset, column, kerning, font index) used by the service UI.
+
+Prototype (conceptual):
+    void pgm_renderf(uint32_t mode, uint32_t base, uint32_t column,
+                     uint32_t kerning, uint32_t font, const char *fmt, ...);
+
+Inputs:
+- arg_0: renderer mode (0 -> VRAM 0x904000, 1 -> VRAM 0x900000, matches sub_6E72).
+- arg_4: base tile address offset (passed straight to sub_6E72 arg_4).
+- arg_8: column index forwarded to sub_6E72 arg_8.
+- arg_C: initial kerning / tile advance (sub_6E72 arg_C).
+- arg_10: font index / glyph table selector (sub_6E72 arg_10).
+- arg_14: pointer to the format string.
+- arg_18+: packed var-arguments (32-bit values, consumed sequentially by sub_7222).
+
+Behaviour outline:
+1. Allocate a 0x80-byte stack buffer (var_8C) to hold the formatted text.
+2. Call sub_7222(var_8C, fmt, &arg_18) so the format string expands into ASCII inside the local buffer. The var-arg pointer is advanced by sub_7222 as it consumes arguments.
+3. Push the formatted buffer pointer plus the original rendering parameters on the stack and invoke sub_6E72 to draw the text onto the tilemap.
+4. After rendering, measure the length of the string (simple byte scan) and advance the caller-supplied output pointer (arg_0) accordingly so consecutive calls append to the correct position.
+
+Analysis notes:
+- The temporary buffer must remain valid until sub_6E72 returns; the routine keeps it on the stack and copies to VRAM immediately, so this is safe.
+- sub_74CC is the common workhorse for menu headings and stats; all higher-level wrappers (ranking display, tests, asserts) converge here.
+- Width and padding logic is entirely handled by sub_7222/sub_6DEE; this wrapper simply forwards the final string.

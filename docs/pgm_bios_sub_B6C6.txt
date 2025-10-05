@@ -1,0 +1,37 @@
+﻿PGM BIOS Function: sub_B6C6 (Write Decimal Buffer -> RTC/Register Block)
+-------------------------------------------------------------------
+Summary: Serialises eight decimal values to the protection/RTC device. Each value is converted to packed BCD, streamed out bit-by-bit, then restored to binary in the caller buffer so higher-level code retains the original numbers.
+
+Assembly highlights:
+- Iterates index 0..7; for each position it:
+  1. Calls `sub_B55E(index + 2)` to select the target register.
+  2. Converts `buffer[index]` from binary to packed BCD via `sub_B536`.
+  3. Emits the BCD byte over the serial link using `sub_B586` (bitwise writer).
+  4. Converts the byte back to binary with `sub_B512` so the in-memory copy remains decimal.
+- After the main loop, issues a trailing command sequence:
+  * `sub_B55E(0x00)` and `sub_B586(0x00)` to signal end-of-transfer.
+  * `sub_B55E(0x0E)` selects the commit register.
+  * `sub_B55E(0x00)` + `sub_B586(0x10)` send the “apply” opcode (0x10) to finalise the write.
+
+Behaviour:
+```c
+void pgm_rtc_write_block(uint8_t *values) {
+    for (uint8_t i = 0; i < 8; ++i) {
+        pgm_push_low_nibble_bits((uint8_t)(i + 2));     // select register
+        uint8_t bcd = pgm_uint_to_bcd(values[i]);       // sub_B536
+        values[i] = bcd;                                // temporary
+        pgm_push_byte_bits(bcd);                        // sub_B586
+        values[i] = pgm_bcd_byte_to_uint(values[i]);    // restore decimal
+    }
+    pgm_push_low_nibble_bits(0x00);
+    pgm_push_byte_bits(0x00);
+    pgm_push_low_nibble_bits(0x0E);
+    pgm_push_low_nibble_bits(0x00);
+    pgm_push_byte_bits(0x10);  // commit/update command
+}
+```
+
+Analysis notes:
+- The convert-send-convert-back pattern avoids allocating a secondary buffer while still feeding BCD to the hardware.
+- Commands at the tail match observed IGS RTC protocols (0x0E selects the control register, 0x10 is “latch into non-volatile storage”).
+- Because `sub_B586` pushes bits MSB→LSB using the ROM mask table, the receiving device must clock in exactly eight pulses per byte; callers should ensure no interrupts stretch the transfer.

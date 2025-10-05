@@ -1,0 +1,21 @@
+
+PGM BIOS Function: sub_8038 (Raise Interrupt Mask to Level 7)
+-----------------------------------------------------------
+Summary: Captures the current interrupt mask then forces the CPU into level-7 (all interrupts disabled). The previous mask is saved to the global word at 0x803442 so other routines can restore it later if desired.
+
+Behaviour outline:
+1. Call sub_801C to read the current SR mask; the returned value (0..7) is stored at absolute address 0x803442.
+2. Push the literal 7 and invoke sub_8002 to update the SR so the interrupt mask becomes 7 (non-maskable).
+3. Pop the temporary argument and return.
+
+C-style sketch:
+    void pgm_raise_irq_mask(void)
+    {
+        uint16_t level = pgm_get_sr_mask();      // sub_801C
+        *(volatile uint16_t *)0x803442 = level;  // remember previous priority
+        pgm_set_sr_mask(7);                      // sub_8002
+    }
+
+Notes:
+- The stored mask is referenced by the fatal assert path (sub_7FCC); although the BIOS never restores it there, other diagnostics could.
+- Because sub_8002 affects the entire SR, this helper should only be used when critical sections must run without interruption.

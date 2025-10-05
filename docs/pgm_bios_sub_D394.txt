@@ -1,0 +1,22 @@
+﻿PGM BIOS Function: sub_D394 (Latch Command Pending Flag)
+---------------------------------------------------
+Summary: Sets the 16-bit flag at 0x80374E to 1 and returns. This flag is referenced by the service-command queue to indicate that at least one message is waiting to be flushed to hardware.
+
+Assembly:
+  D394: move.w #1, (unk_80374E).l
+  D39C: rts
+
+Behaviour:
+- Writes the literal value 1 to the global `unk_80374E`.
+- No registers are preserved; the caller must save anything live.
+
+C-style equivalent:
+```c
+void pgm_set_queue_pending(void) {
+    *(volatile uint16_t *)0x80374E = 1;
+}
+```
+
+Analysis notes:
+- There is no matching routine in the BIOS that clears this flag; higher-level code likely zeroes it manually once the pending command FIFO drains.
+- Because the location sits in work RAM, writes are immediate and do not require handshake with external devices.

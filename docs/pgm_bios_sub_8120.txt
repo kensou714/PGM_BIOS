@@ -1,0 +1,30 @@
+﻿PGM BIOS Function: sub_8120 (Resource Load Failure Handler)
+-------------------------------------------------------
+Summary: Calls the palette bootstrapper and then loops forever while rendering the "RESOURCE ERROR %s" banner via the formatted text helper. Intended to freeze the system with a descriptive message when a required asset cannot be fetched.
+
+Assembly highlights:
+- 0x8124: `jsr sub_6C9A` prepares the service palette rows used by other fatal screens.
+- 0x812A?0x8138: pushes the caller-supplied string plus two literal 0x0000000A coordinates before invoking `sub_7516`.
+- 0x813C: `jsr sub_7516` formats "RESOURCE ERROR %s" using the supplied name.
+- 0x8142: `bra.s loc_8142` creates a tight infinite loop so the message stays onscreen.
+
+Behaviour:
+1. Ensure the service UI palette columns are live (sub_6C9A).
+2. Call `sub_7516(0x0000000A, 0x0000000A, "RESOURCE ERROR %s", resourceName)` to draw the message at tile (10,10).
+3. Spin forever; there is no recovery path.
+
+C-style sketch:
+```c
+void pgm_fatal_resource_error(const char *resource_name) {
+    pgm_preset_service_palettes();
+    while (true) {
+        pgm_renderf_basic(0x0000000A, 0x0000000A,
+                          "RESOURCE ERROR %s", resource_name);
+    }
+}
+```
+
+Analysis notes:
+- The duplicated `pea ($A).w` pushes of 0x0000000A feed the position parameters expected by sub_7516 (row/column = 10).
+- The caller-provided argument acts as the first vararg to satisfy the `%s` placeholder.
+- This handler never restores registers or returns, so higher-level code should only call it when the BIOS cannot continue without the missing asset.

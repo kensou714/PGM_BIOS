@@ -1,0 +1,20 @@
+
+PGM BIOS Function: sub_804E (Restore Interrupt Mask)
+---------------------------------------------------
+Summary: Restores the Motorola 68000 interrupt priority to the value previously saved at 0x803442. The helper simply reads the stored level, calls sub_8002(level), and returns.
+
+Behaviour:
+1. Push the 16-bit value at absolute address 0x803442 onto the stack.
+2. Branch to sub_8002 to write that level into the status register mask.
+3. Pop the temporary argument and return.
+
+C-style equivalent:
+    void pgm_restore_irq_mask(void)
+    {
+        uint16_t level = *(volatile uint16_t *)0x803442;
+        pgm_set_sr_mask(level);    // sub_8002
+    }
+
+Notes:
+- Pairs with sub_8038. Routines that raise the mask to level 7 should call this helper once the critical section completes.
+- Assumes 0x803442 was initialised (e.g., via sub_8038). If not, the behaviour is undefined (whatever value resides there will be written to SR).

@@ -1,0 +1,22 @@
+﻿PGM BIOS Function: sub_D3B2 (Queue Pointer Placeholder)
+-------------------------------------------------
+Summary: Saves `d2/a2/a3`, loads the caller-supplied pointer into `a2`, then immediately restores the registers and returns. It exists solely to provide an overridable entry point for later revisions; in this BIOS build the body is effectively a no-op.
+
+Assembly (trimmed):
+  D3B2: movem.l d2/a2-a3, -(sp)
+  D3B6: movea.l 0x0C(sp), a2   ; load argument
+  D3BA: bra.s D408             ; jump to epilogue
+  D408: movem.l (sp)+, d2/a2-a3
+  D40C: rts
+
+Behaviour:
+```c
+void pgm_queue_hook(void *ctx) {
+    (void)ctx;  // intentionally unused in this revision
+}
+```
+
+Analysis notes:
+- Although it currently does nothing, sub_D58E invokes this helper after pushing a pointer to `unk_803730`, hinting that some BIOS versions replace this routine with code that iterates a command queue.
+- Keeping the register save/restore ensures forward binary compatibility: later firmwares can patch only the body without touching call sites.
+- Callers must not rely on the pointer persisting anywhere; any required side effects must be implemented in future overrides.

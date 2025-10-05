@@ -1,0 +1,45 @@
+﻿PGM BIOS Function: sub_C876 (Render 4×4 Tile Stamp)
+------------------------------------------------
+Summary: Builds a 4×4 block of sequential tiles inside the tilemap plane based at 0x904000. The destination is derived from the caller’s row/column arguments via the stride helper, the palette bits come from arg_8, and arg_C supplies the starting tile index (auto-incremented for each cell).
+
+Assembly highlights:
+- Calls `sub_7F6A(0x40, &unk_500)` to obtain the stride used when stepping one row down the tilemap; the byte count is accumulated in `d3`.
+- Uses `sub_D80A` twice (with arg_4 and then with the constant row/column counts) and adds arg_0 to compute a tile index. After shifting left by two and adding 0x904000, this becomes the VRAM base pointer stored in `a3`.
+- Reads a word from a global layout descriptor (`*(uint16_t *)(*(uint32_t *)(*(uint32_t *)(unk_1851E+4))+4)`) and adds it to the stride, synchronising with the globally configured tilemap width.
+- Two nested loops (`d5` and `d4` initialised to 3) iterate four columns by four rows. Inner loop:
+  * Clears the 32-bit entry at `a2`.
+  * Inserts `(arg_8 & 0x1F) << 1` into the attribute byte at offset +3.
+  * Stores the current tile code `d6` into the word at offset +0, then increments `d6`.
+  * Advances `a2` by 4 bytes to the next tile slot.
+- After finishing a row the code increments the base pointer `a3` by the row stride (`d2 << 2`, where `d2` was seeded with 0x40) and repeats.
+
+Behaviour sketch:
+```c
+void pgm_stamp_4x4(uint32_t base_index, uint32_t column, uint32_t attr_flags, uint16_t start_tile) {
+    uint32_t row_stride = pgm_sprite_stride(0x40);      // sub_7F6A
+    uint32_t offset = pgm_mul_stride(0x40, column);     // sub_D80A helper
+    offset += base_index;
+    uint16_t layout_stride = pgm_layout_stride();       // global via unk_1851E
+    row_stride += layout_stride;
+
+    uint8_t *row_ptr = (uint8_t *)(0x904000 + (offset << 2));
+    uint16_t tile = start_tile;
+
+    for (uint32_t row = 0; row < 4; ++row) {
+        uint8_t *cell = row_ptr;
+        for (uint32_t col = 0; col < 4; ++col) {
+            cell[0] = tile & 0xFF;
+            cell[1] = tile >> 8;
+            cell[3] = (cell[3] & 0xC1) | ((attr_flags & 0x1F) << 1);
+            ++tile;
+            cell += 4;
+        }
+        row_ptr += (row_stride << 2);   // advance to next tile row
+    }
+}
+```
+
+Analysis notes:
+- Attribute packing matches the PGM tile layout where bits 1–5 encode palette/banking; the mask `0xC1` preserves priority and flip flags managed elsewhere.
+- The helper assumes the caller has already set up the tilemap’s global stride tables (`unk_1851E`). Changes to the render mode should refresh those tables before invoking this routine.
+- Because tile indices auto-increment, supplying a start tile that crosses a bank boundary will bleed into the next bank; external logic must manage bank switching if needed.

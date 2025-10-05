@@ -1,0 +1,19 @@
+PGM BIOS Function: sub_8002 (Set Interrupt Mask)
+-----------------------------------------------
+Summary: Helper that updates the Motorola 68000 status register interrupt mask (bits 10..8). The caller supplies a level in the range 0..7; the routine preserves D2, clears the existing mask, writes the new value, and returns.
+
+Prototype:
+    void pgm_set_sr_mask(uint16_t level);  /* level 0..7 */
+
+Behaviour outline:
+1. Save D2 on the stack (function uses D2 as a scratch register).
+2. Load the caller-supplied level into D2 and shift it left by 8 so the bits line up with SR[10:8].
+3. Read the current status register into D0.
+4. Clear bits 10..8 by ANDing with 0xF8FF.
+5. OR in the shifted level value and write the result back to SR.
+6. Restore D2 and return.
+
+Notes:
+- This helper neither validates the level nor masks it beyond the low three bits; callers should pass a value in the 0..7 range.
+- Because SR writes affect the entire status register, interrupts are updated atomically when this function executes.
+- The BIOS saves the previous mask in unk_803442 before raising the level via sub_8038, allowing later restoration if needed.

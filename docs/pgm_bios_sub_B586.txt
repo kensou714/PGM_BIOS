@@ -1,0 +1,36 @@
+﻿PGM BIOS Function: sub_B586 (Sound-Port Bit Extractor, 8-bit)
+---------------------------------------------------------
+Summary: Generalises `sub_B55E` to cover all eight bit positions of the mask byte. Each iteration uses the same 0xE232 lookup table to isolate one bit, shifts it down to bit0, and forwards the result to the shared M68K→Z80 latch.
+
+Assembly highlights:
+- Preserves D2 because it serves as the loop index (0..7).
+- `moveq #0, d0 / move.b d2, d0` prepares the variable shift count for `asr.l`.
+- `and.b 4+arg_3(sp), d1` applies the caller mask (argument byte) to the selected table entry.
+- Writes each extracted bit as a 16-bit word to `pgm_m68k_to_z80_b+1`.
+
+Behaviour:
+1. Save D2, clear it to start from bit index 0.
+2. Loop while index < 8:
+   - Load the i-th mask from ROM.
+   - Mask it with the caller-supplied byte and shift right by i.
+   - Emit the single-bit result to the sound latch.
+   - Increment the index.
+3. Restore D2 and return.
+
+C-style sketch:
+```c
+void pgm_push_byte_bits(uint8_t mask_bits) {
+    static const uint8_t bit_lut[8] = {
+        /* ROM: 0xE232..0xE239 */
+    };
+    for (uint8_t i = 0; i < 8; ++i) {
+        uint8_t value = (uint8_t)((bit_lut[i] & mask_bits) >> i);
+        *(volatile uint16_t *)0xC00006 = value;
+    }
+}
+```
+
+Analysis notes:
+- The LUT mirrors the one used by `sub_B55E`; extending to eight entries lets the BIOS serialize a full byte to the sound CPU, one bit per write.
+- Arithmetic shift is used, but the operand stays non-negative (byte masked to 0..255), so logical and arithmetic shifts coincide.
+- Callers typically interleave this helper with timed delays to respect the Z80 handshake protocol.

@@ -1,0 +1,73 @@
+﻿PGM BIOS Function: sub_D930 (Unsigned Integer → ASCII, Arbitrary Base)
+-----------------------------------------------------------------
+Summary: Converts a non-negative 32-bit integer into an uppercase ASCII string in the requested radix (2–36). The digits are pushed on the stack and written in forward order to the caller-supplied buffer. The function returns the number of characters emitted.
+
+Parameters:
+- D0 / arg_0: value to convert (treated as unsigned).
+- A0 / arg_4: output buffer; the routine writes characters and leaves the pointer at the terminator.
+- D1 / arg_8: radix. Values outside 2..36 default to 10.
+
+Behaviour outline:
+1. Push a NUL byte to seed the output terminator.
+2. Clamp the radix to [2, 36]; if invalid, use base 10.
+3. If the value exceeds 0xFFFF, fall back to a shift/subtract divider that extracts digits without relying on 16-bit DIVU.
+4. Otherwise, repeatedly divide by the radix using `divu`:
+   - After each division, the remainder (0..radix-1) is swapped into the low byte, converted to ASCII (`+0x30`, and `+7` for values > 9), and pushed on the stack.
+5. When the remaining quotient is less than the radix, push the final digit and begin popping.
+6. Pop characters until the sentinel NUL is reached, converting 0..35 into `'0'..'9'` / `'A'..'Z'`, and store them sequentially via `*(a0++)`.
+7. Restore registers and return the number of characters written (exclusive of the terminator): `return (a0 - dest_start)`.
+
+C-style approximation:
+```c
+size_t pgm_utoa_base(uint32_t value, char *out, uint32_t base) {
+    if (base < 2 || base > 36) base = 10;
+
+    char stack_buf[40];
+    size_t sp = 0;
+    stack_buf[sp++] = '\0';
+
+    if (value > 0xFFFF) {
+        // Manual long division (shift/subtract) for large numerators.
+        uint32_t q = 0;
+        uint32_t r = 0;
+        for (int i = 0; i < 32; ++i) {
+            q <<= 1;
+            r = (r << 1) | ((value >> (31 - i)) & 1);
+            if (r >= base) {
+                r -= base;
+                ++q;
+            }
+            if (i % 8 == 7) {
+                stack_buf[sp++] = (char)('0' + q);
+                q = 0;
+            }
+        }
+        stack_buf[sp++] = (char)('0' + r);
+    } else {
+        do {
+            uint32_t quotient = value / base;
+            uint32_t rem = value % base;
+            char digit = (char)(rem < 10 ? '0' + rem : 'A' + rem - 10);
+            stack_buf[sp++] = digit;
+            value = quotient;
+        } while (value >= base);
+        char digit = (char)(value < 10 ? '0' + value : 'A' + value - 10);
+        stack_buf[sp++] = digit;
+    }
+
+    size_t len = 0;
+    while (sp--) {
+        char ch = stack_buf[sp];
+        if (ch == '\0') break;
+        out[len++] = ch;
+    }
+    out[len] = '\0';
+    return len;
+}
+```
+
+Analysis notes:
+- The large-number path (value > 0xFFFF) performs a 32-iteration restoring division using `roxl`; it builds digits one bit at a time and pushes them when a full remainder has been accumulated.
+- Characters above `'9'` are mapped to uppercase (`'A'..'Z'`), matching the BIOS display conventions for hexadecimal-style readouts.
+- The return value is `(final_ptr - original_ptr)`, enabling callers to chain writes or reserve space efficiently.
+- Negative inputs are not handled; callers must pre-process via `sub_D7FE` or similar if signed values are possible.

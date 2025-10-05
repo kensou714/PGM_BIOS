@@ -1,0 +1,52 @@
+﻿PGM BIOS Function: sub_D8F4 (Signed Divide With Saturation)
+------------------------------------------------------
+Summary: Divides a 32-bit signed numerator (D0) by a 32-bit signed denominator (D1) and returns the remainder in D0. It prefers the 68000 `divs` instruction when possible, falling back to the general long/word divide helper `sub_D874` when operands exceed the hardware range. The sign of the remainder follows the numerator, matching C99 semantics.
+
+Call signature (informal):
+    int32_t pgm_divrem_s32(int32_t numerator, int32_t denominator, int32_t *out_remainder);
+
+Observed register protocol:
+- Input:  D0 = numerator, D1 = denominator.
+- Output: D0 = remainder (signed), D1 retains the absolute denominator (post-processing); quotient is available only transiently (in internal registers).
+
+Behaviour details:
+1. Fast path using `divs`:
+   - Ensures the denominator fits in the 16-bit signed range (±0x7FFF).
+   - Performs `divs.w d1, d0`; this produces a 16-bit quotient in the lower word, remainder in the upper word.
+   - Swaps words and sign-extends so D0 holds the remainder as a 32-bit signed value, then returns.
+
+2. Slow path (fallback):
+   - Saves D2 as a sign accumulator (bit 0 toggles if numerator < 0, another toggle if denominator < 0).
+   - Negates operands to make them non-negative before calling `sub_D874`, which computes an unsigned division returning quotient in D0 and remainder in D1.
+   - After the call, moves the unsigned remainder (D1) back into D0.
+   - If D2 indicates the original numerator was negative, negates the remainder to restore the sign.
+   - Restores D2 and returns.
+
+C-style approximation:
+```c
+int32_t pgm_divrem_s32(int32_t numerator, int32_t denominator, int32_t *quot_out) {
+    if (denominator > 0x7FFF || denominator < -0x8000) {
+        int sign = 0;
+        int32_t n = numerator;
+        int32_t d = denominator;
+        if (n < 0) { n = -n; sign ^= 1; }
+        if (d < 0) { d = -d; sign ^= 1; }
+
+        int32_t q = pgm_div_u32_u16((uint32_t)n, (uint16_t)d, (uint16_t *)&denominator);
+        int32_t r = (int32_t)denominator;  // remainder from helper
+        if (sign) r = -r;
+        if (quot_out) *quot_out = (sign ? -q : q);
+        return r;
+    }
+
+    int32_t q = numerator / denominator;
+    int32_t r = numerator % denominator;
+    if (quot_out) *quot_out = q;
+    return r;
+}
+```
+
+Analysis notes:
+- Unlike the pure unsigned helper, `sub_D8F4` protects against the 68000’s `divs` overflow by parking large denominators on the slow path.
+- Many BIOS routines pair this with `sub_D838`: `sub_D8F4` yields the remainder, while `sub_D838` (similar structure) gives the quotient.
+- When integrating with C code, remember that the quotient is not preserved in D0; callers needing both quotient and remainder must capture D1 (for divisor) and D0 immediately after the call.

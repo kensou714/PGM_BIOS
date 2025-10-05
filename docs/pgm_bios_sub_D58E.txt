@@ -1,0 +1,58 @@
+﻿PGM BIOS Function: sub_D58E (Format & Queue Service Command)
+-------------------------------------------------------
+Summary: Builds one or two 32-bit command words describing a service/UI event and pushes them into the command buffer at 0x803730 via sub_1310. It also maintains a wrapped frame counter at 0x80374C and, depending on the channel ID, queues a secondary payload derived from arg_C. The function returns the low 16 bits of the tile/position field it just emitted.
+
+Parameters (observed):
+- arg_0 (d2): channel/state identifier; determines whether the secondary payload is sent (IDs 2–5).
+- arg_4 (d4): 16-bit field packed into the command’s lower word (row/column + flags).
+- arg_B: 8-bit attribute merged with the channel ID into the upper half-word.
+- arg_C (d5): optional data word compressed into the second command when `d2` is 2–5.
+
+Key steps:
+1. Increment the global frame counter at `unk_80374C` and wrap it modulo 0x40 using `sub_D8F4`. The resulting 0..63 value is reused in the command payload.
+2. Assemble `d3`, a 16-bit tile/position value:
+   - High byte comes from `arg_4 << 8`.
+   - Bits 8–9 inherit the frame-counter remainder (`<< 2`).
+   - Bits 0–1 take the top two bits of `arg_4` (`arg_4 >> 8 & 3`).
+3. Build the 32-bit command word `var_4`:
+   ```
+   header = ((arg_0 & 0xFF) << 8) | arg_B;    // shifted later into bits 31..16
+   payload = d3 & 0xFFFF;                     // tile / position info
+   command0 = (header << 16) | payload;
+   ```
+   Push this word to the command queue via `sub_1310(command0, &unk_803730)`.
+4. For channel IDs 2–5, construct a second word `command1` that stores the low 16 bits of `arg_C` split across the top two bytes:
+   ```
+   command1 = ((arg_C & 0x00FF) << 24) | ((arg_C & 0xFF00) << 8);
+   ```
+   Queue it with another `sub_1310` call.
+5. Call `sub_D3B2(&unk_803730)`; in this BIOS it is a stub, but later revisions may use it to flush or postprocess the queue.
+6. Return `d0 = d3 & 0xFFFF`, letting the caller know which tile/position word was just enqueued.
+
+Behaviour sketch:
+```c
+uint16_t pgm_queue_service_cmd(uint8_t channel, uint16_t position, uint8_t attr, uint16_t extra) {
+    uint8_t frame = (*(uint8_t *)0x80374C + 1) % 0x40;          // via sub_D8F4
+    *(uint8_t *)0x80374C = frame;
+
+    uint16_t payload = (position << 8) | ((frame & 0x3F) << 2) | ((position >> 8) & 0x3);
+    uint32_t command0 = (((uint32_t)channel << 8) | attr) << 16;
+    command0 |= payload;
+
+    pgm_enqueue_command(command0, (void *)0x803730);            // sub_1310
+
+    if (channel >= 2 && channel <= 5) {
+        uint32_t command1 = ((uint32_t)(extra & 0x00FF) << 24) |
+                             ((uint32_t)(extra & 0xFF00) << 8);
+        pgm_enqueue_command(command1, (void *)0x803730);
+    }
+
+    pgm_queue_hook((void *)0x803730);                            // sub_D3B2 (no-op here)
+    return payload;
+}
+```
+
+Analysis notes:
+- The wrapped counter stored at 0x80374C likely drives animation timing for UI widgets; embedding it in the payload lets the consumer keep time without reading the global each frame.
+- `sub_1310` is used elsewhere to push commands toward the service text renderer; capturing its interface would help decode the layout of the command words.
+- If firmware mods change the command queue depth, ensure `sub_D3B2` still gets called—later BIOS builds patch it to drain or signal the hardware.

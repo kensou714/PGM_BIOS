@@ -1,0 +1,23 @@
+PGM BIOS Function: sub_7516 (Formatted Text Renderer, Minimal)
+-------------------------------------------------------------
+Summary: Convenience wrapper around sub_74CC for simple banners. It formats a printf-style string with sub_7222 and renders it with sub_6E72 using default placement (mode 0, zero base/column/kerning/font). Used by the fatal assert path and other quick notifications.
+
+Prototype (conceptual):
+    void pgm_renderf_basic(uint32_t base, const char *fmt, ...);
+
+Inputs:
+- arg_0: destination pointer forwarded to sub_6E72 arg_0 (rendering mode).
+- arg_4: base tile offset (maps to sub_6E72 arg_4).
+- arg_8: format string.
+- arg_C+: var-arguments consumed by sub_7222.
+
+Behaviour outline:
+1. Allocate the same 0x80-byte stack buffer as sub_74CC.
+2. Call sub_7222(buffer, fmt, &arg_C) to expand the message.
+3. Invoke sub_6E72 with the formatted buffer while zeroing the optional parameters (column, kerning, font index).
+4. Scan the resulting string to find its length and advance the caller supplied output pointer accordingly.
+
+Notes:
+- Because column/kerning/font are zeroed, the output lands at the default service text origin using the primary font.
+- sub_7516 shares the same temporary buffer and helper chain as sub_74CC; it merely supplies constant parameters.
+- Fatal assertions and diagnostics call this helper so they can supply fmt, file, and line without worrying about placement.

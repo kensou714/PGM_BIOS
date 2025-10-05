@@ -1,0 +1,29 @@
+﻿PGM BIOS Function: sub_B536 (Binary -> Packed BCD Byte)
+--------------------------------------------------
+Summary: Converts a binary value in the low byte of the argument into a packed BCD digit pair. Delegates the heavy lifting to the signed divide helpers (sub_D8F4 for remainder, sub_D838 for quotient).
+
+Assembly highlights:
+- 0xB53E?0xB542: load the input byte into D0 and set the divisor (10).
+- 0xB542?0xB548: `sub_D8F4` computes the remainder (ones digit) and is temporarily pushed.
+- 0xB54C?0xB550: `sub_D838` produces the quotient (tens digit).
+- 0xB556?0xB558: pack tens<<4 | ones and return.
+
+Behaviour:
+1. Preserve D2 because the divide helpers clobber it.
+2. Compute ones = value % 10 via sub_D8F4 and stash it.
+3. Compute tens = value / 10 via sub_D838.
+4. Pack tens (upper nibble) and ones (lower nibble) into D0 and return.
+
+C-style sketch:
+```c
+uint8_t pgm_uint_to_bcd(uint8_t value) {
+    uint8_t ones = value % 10;
+    uint8_t tens = value / 10;
+    return (uint8_t)((tens << 4) | ones);
+}
+```
+
+Analysis notes:
+- Only the least-significant byte is considered; callers should clamp the input to 0..99 to stay within two decimal digits.
+- The divide helpers handle signed operands and overflow detection, but in this context the input is non-negative so the fast DIVS path is normally taken.
+- Used together with sub_B512 to round-trip between BCD storage and binary math in the service counters.
