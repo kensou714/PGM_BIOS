@@ -1,0 +1,101 @@
+﻿PGM BIOS Overview & Index
+=========================
+
+Purpose
+-------
+- 汇总 PGM BIOS 已逆向的全部函数说明，并指出对应的文档路径，便于快速定位细节。
+- 按子系统归类主要功能块（定时器、调色板、服务菜单、RTC 与算术助手等），方便后续分析或补充测试。
+
+Subsystem Highlights
+--------------------
+- 定时器与任务调度：`sub_D22`, `sub_DC8`, `sub_E10`, `sub_F40`, `sub_F8A`, `sub_1012`, `sub_104E`, `sub_1188`（参见 docs/pgm_bios_sub_D22.txt 等）共同维护 0x801550 的 BIOS 计时器表，实现分配、回收与时间片更新。
+- 调色板与作业队列：`sub_2008` 至 `sub_250A`（docs/pgm_bios_sub_2008.txt 起）为服务菜单的调色板任务建模，负责插槽分配、参数写入、完成状态轮询与回收。
+- 排行 / 统计界面：`sub_3798`、`sub_37D6`、`sub_383C`、`sub_3E3C`、`sub_4076`、`sub_4138`、`sub_42CC`、`sub_46C4`、`sub_4958` 等（对应 docs/pgm_bios_sub_3798.txt 等）生成服务模式下的排行榜、统计页与分页渲染。
+- 文本渲染核心：`sub_6E72`、`sub_7222`、`sub_74CC`、`sub_7516`、`sub_7932`、`sub_7FCC`、`sub_8002`~`sub_804E`、`sub_8120`，结合助手 `sub_7F6A`, `sub_D80A`, `sub_D9B2`（docs/pgm_bios_sub_6E72.txt、docs/pgm_bios_sub_7222.txt、docs/pgm_helper_sub_7F6A.txt 等）构成服务菜单文本排版、格式化与 VRAM 写入的主干。
+- 命令队列与事件广播：`sub_1310`, `sub_1730`, `sub_17F6`, `sub_D394`, `sub_D3B2`, `sub_D58E`（docs/pgm_bios_sub_1310.txt 等）负责把 UI／统计事件打包到 0x803730 队列，并通过标志位同步消费者。
+- RTC / I/O 通路：`sub_B55E`, `sub_B586`, `sub_B5BC`, `sub_B666`, `sub_B6C6`, `sub_B512`, `sub_B536`, `sub_D7FE`, `sub_D8F4`, `sub_D930`（对应 docs/pgm_bios_sub_B55E.txt 等）提供与保护芯片/RTC 的串行握手、BCD 编解码、数值格式化。
+- 通用算术助手：`sub_D874`, `sub_D8D8`, `sub_DA16`（docs/pgm_helper_sub_D874.txt 等）覆写 68K 原生除法及结构比较逻辑，为评分和时间统计提供支撑。
+- 标志查表：`sub_DA7C`, `sub_DA94`（docs/pgm_bios_sub_DA7C.txt, docs/pgm_bios_sub_DA94.txt）读取 0xDFBB 配置信息，用于菜单项属性与索引折返。
+
+Detailed Index
+--------------
+   0xD22  sub_D22       Copies 32-byte blocks from a source buffer to a destination buffer using unrolled longword moves.  (docs/pgm_bios_sub_D22.txt)
+   0xDC8  sub_DC8       Copies 16-bit words from a source buffer to a destination buffer using a simple counted loop.  (docs/pgm_bios_sub_DC8.txt)
+   0xE10  sub_E10       Writes a constant 32-bit pattern into consecutive memory using an unrolled loop that stores 16 lo...  (docs/pgm_bios_sub_E10.txt)
+   0xF40  sub_F40       Scans the BIOS timer table at 0x801550 for a free entry (value 0xFFFFFFFF), reserves it, incremen...  (docs/pgm_bios_sub_F40.txt)
+   0xF8A  sub_F8A       Returns a timer slot to the BIOS pool by writing 0xFFFFFFFF back to the table at 0x801550 and dec...  (docs/pgm_bios_sub_F8A.txt)
+  0x1012  sub_1012      Validates a timer slot index and returns the 32-bit value stored in the BIOS timer table at 0x801...  (docs/pgm_bios_sub_1012.txt)
+  0x104E  sub_104E      Validates a timer slot index, then stores a 32-bit value into the BIOS timer table at 0x801550. E...  (docs/pgm_bios_sub_104E.txt)
+  0x1188  sub_1188      Allocates a timer slot, stores a 32-bit job descriptor into the timer table, optionally invokes a...  (docs/pgm_bios_sub_1188.txt)
+  0x12B8  sub_12B8      Compares two counters inside a BIOS-managed structure to determine whether the FIFO-style buffer...  (docs/pgm_bios_sub_12B8.txt)
+  0x1310  sub_1310      Attempts to copy a fixed-length packet from a caller buffer into a BIOS-managed ring slot. If the...  (docs/pgm_bios_sub_1310.txt)
+  0x1730  sub_1730      Queries an external status helper (sub_1910). When no pending work is reported it fetches a 32-bi...  (docs/pgm_bios_sub_1730.txt)
+  0x17F6  sub_17F6      Checks the global pending-event status via sub_1910/sub_190C. If the supplied index matches the p...  (docs/pgm_bios_sub_17F6.txt)
+     0x1  sub_1         Placeholder subroutine that immediately returns to the caller.  (docs/pgm_bios_nullsub_1.txt)
+  0x190C  sub_190C      Returns zero. In the production BIOS this would likely fetch the identifier of the next pending e...  (docs/pgm_bios_sub_190C.txt)
+  0x1910  sub_1910      Returns constant 1, acting as a placeholder for a routine that should test whether pending events...  (docs/pgm_bios_sub_1910.txt)
+  0x2008  sub_2008      Clears three longwords at 0x801ED0, 0x801ED4, and 0x801ED8. These addresses lie near the palette...  (docs/pgm_bios_sub_2008.txt)
+  0x2086  sub_2086      Searches the palette job table at 0x801EDC for a free slot, clears its delay counter, marks it ac...  (docs/pgm_bios_sub_2086.txt)
+  0x21AC  sub_21AC      Writes parameters into a palette job slot selected by index and flags the entry as ready (state =...  (docs/pgm_bios_sub_21AC.txt)
+  0x2208  sub_2208      Decrements the active palette slot counter at 0x801F0C, clears the completion flag in the auxilia...  (docs/pgm_bios_sub_2208.txt)
+  0x2280  sub_2280      Checks the auxiliary status word for a palette slot. Returns 1 when the slot is ready (status wor...  (docs/pgm_bios_sub_2280.txt)
+  0x22A0  sub_22A0      Allocates a palette slot, populates it with parameters, waits for the hardware/worker to clear th...  (docs/pgm_bios_sub_22A0.txt)
+  0x22E4  sub_22E4      Builds a palette-update request by combining lookup tables at 0xDDB4/0xDDA8, then dispatches the...  (docs/pgm_bios_sub_22E4.txt)
+  0x238E  sub_238E      Uses LUT tables (0xDDB4/0xDDA8) to compute a source pointer, copies a block of palette data into...  (docs/pgm_bios_sub_238E.txt)
+  0x2466  sub_2466      Scans the fade-effect job table at 0x801F0E for a free slot, reserves it via the palette slot all...  (docs/pgm_bios_sub_2466.txt)
+  0x250A  sub_250A      Writes fade parameters into a slot within the fade job table at 0x801F0E and marks the slot activ...  (docs/pgm_bios_sub_250A.txt)
+  0x27B0  sub_27B0      Releases a fade slot in the table at 0x801F0E. If the slot has an associated palette job (state !...  (docs/pgm_bios_sub_27B0.txt)
+  0x2C6C  sub_2C6C      Iterates over four entries in the table at 0x802058 (stride 0x10 bytes) and clears the first byte...  (docs/pgm_bios_sub_2C6C.txt)
+  0x3054  sub_3054      Calls the fade timing reset (sub_2C6C) and palette bookkeeping reset (sub_2008). Intended to clea...  (docs/pgm_bios_sub_3054.txt)
+  0x3798  sub_3798      Pushes a series of parameters and string pointers before invoking the text rendering routine sub_...  (docs/pgm_bios_sub_3798.txt)
+  0x37D6  sub_37D6      Iterates over a block of accounting counters and, for each entry, builds a numeric sprite strip v...  (docs/pgm_bios_sub_37D6.txt)
+  0x383C  sub_383C      Drives the service-mode accounting table. Iterates over multiple counters, formats each one with...  (docs/pgm_bios_sub_383C.txt)
+  0x3E3C  sub_3E3C      Builds the service-mode counter display: renders column headers via sub_37D6 and loc_3984, and pl...  (docs/pgm_bios_sub_3E3C.txt)
+  0x4076  sub_4076      Clears the score/ranking structures anchored at the buffer pointed to by rg_0. The routine wipes...  (docs/pgm_bios_sub_4076.txt)
+  0x4138  sub_4138      Draws the on-screen high-score table using the ranking data initialised by sub_4076. For each act...  (docs/pgm_bios_sub_4138.txt)
+  0x42CC  sub_42CC      Renders a paged subset of the ranking table. The caller supplies the table pointer and the number...  (docs/pgm_bios_sub_42CC.txt)
+  0x46C4  sub_46C4      Draws a six-column statistics page for the ranking table. The caller specifies the starting colum...  (docs/pgm_bios_sub_46C4.txt)
+  0x4958  sub_4958      Wrapper that renders the service-mode screen showing play counts, continue counts, and average ti...  (docs/pgm_bios_sub_4958.txt)
+  0x545E  sub_545E      Shifts a sequence of fixed-size blocks forward by one slot inside a table. The routine uses `sub_...  (docs/pgm_bios_sub_545E.txt)
+  0x54EC  sub_54EC      Searches a compact ranking table for an entry matching the global course/difficulty identifiers....  (docs/pgm_bios_sub_54EC.txt)
+  0x55AA  sub_55AA      Mirrors `sub_54EC`, but operates on the extended ranking table where each entry is 0x1C bytes. It...  (docs/pgm_bios_sub_55AA.txt)
+  0x5986  sub_5986      Manages a pool of eight ranking buffer sets stored at 0x8021CE. Each set occupies 0x230 bytes and...  (docs/pgm_bios_sub_5986.txt)
+  0x63E2  sub_63E2      Given a ranking entry index and two 16-bit values, this routine writes the values into the rankin...  (docs/pgm_bios_sub_63E2.txt)
+  0x6910  sub_6910      Clears a 0x80-word region starting at address 0x904000 by invoking the fill helper `sub_E10`.  (docs/pgm_bios_sub_6910.txt)
+  0x6928  sub_6928      Clears a 0x100-word block at address 0x900000, then writes a single ranking slot via `sub_63E2`....  (docs/pgm_bios_sub_6928.txt)
+  0x6C9A  sub_6C9A      Invokes `sub_238E` five times to copy palette blocks from ROM into RAM. Each call targets a diffe...  (docs/pgm_bios_sub_6C9A.txt)
+  0x6DEE  sub_6DEE      Inserts a string into a buffer, shifting existing data forward to make room. Commonly used to upd...  (docs/pgm_bios_sub_6DEE.txt)
+  0x6E72  sub_6E72      Core routine that renders formatted strings onto the service menu tilemap. It supports multiple r...  (docs/pgm_bios_sub_6E72.txt)
+  0xD80A  sub_D80A      Multiplies a stride (`d1`) by an index (`d0`) while correctly handling high bits for 24-bit addre...  (docs/pgm_helper_sub_D80A.txt)
+  0xD9B2  sub_D9B2      Copies a block of bytes from source to destination while preserving alignment and handling arbitr...  (docs/pgm_helper_sub_D9B2.txt)
+  0x7F6A  sub_7F6A      Converts a character count into a sprite strip buffer ready for DMA to VRAM. The routine validate...  (docs/pgm_helper_sub_7F6A.txt)
+  0x7222  sub_7222      Builds a formatted ASCII string for the service-menu text renderer. It implements a small printf-...  (docs/pgm_bios_sub_7222.txt)
+  0x74CC  sub_74CC      Front-end that formats a printf-style string with sub_7222 and then renders it onto the tilemap v...  (docs/pgm_bios_sub_74CC.txt)
+  0x7516  sub_7516      Convenience wrapper around sub_74CC for simple banners. It formats a printf-style string with sub...  (docs/pgm_bios_sub_7516.txt)
+  0x7932  sub_7932      Copies a single frame from a CIMAGE descriptor into the service-menu tilemap. The routine validat...  (docs/pgm_bios_sub_7932.txt)
+  0x7FCC  sub_7FCC      Handles unrecoverable BIOS assertions. The routine preserves the current interrupt mask, raises t...  (docs/pgm_bios_sub_7FCC.txt)
+  0x8002  sub_8002      Helper that updates the Motorola 68000 status register interrupt mask (bits 10..8). The caller su...  (docs/pgm_bios_sub_8002.txt)
+  0x801C  sub_801C      Reads the Motorola 68000 status register and returns the current interrupt mask (bits 10..8). The...  (docs/pgm_bios_sub_801C.txt)
+  0x8038  sub_8038      Captures the current interrupt mask then forces the CPU into level-7 (all interrupts disabled). T...  (docs/pgm_bios_sub_8038.txt)
+  0x804E  sub_804E      Restores the Motorola 68000 interrupt priority to the value previously saved at 0x803442. The hel...  (docs/pgm_bios_sub_804E.txt)
+  0x8120  sub_8120      Calls the palette bootstrapper and then loops forever while rendering the "RESOURCE ERROR %s" ban...  (docs/pgm_bios_sub_8120.txt)
+  0xB512  sub_B512      Decodes a packed BCD byte (high nibble = tens, low nibble = units) into a binary integer. Widely...  (docs/pgm_bios_sub_B512.txt)
+  0xB536  sub_B536      Converts a binary value in the low byte of the argument into a packed BCD digit pair. Delegates t...  (docs/pgm_bios_sub_B536.txt)
+  0xB55E  sub_B55E      Iterates across the lowest four bit positions of the argument byte, masking each bit with a looku...  (docs/pgm_bios_sub_B55E.txt)
+  0xB586  sub_B586      Generalises `sub_B55E` to cover all eight bit positions of the mask byte. Each iteration uses the...  (docs/pgm_bios_sub_B586.txt)
+  0xB5BC  sub_B5BC      Reads eight successive bits from the protection/RTC port at 0xC00007, aligns each bit using the 0...  (docs/pgm_bios_sub_B5BC.txt)
+  0xB666  sub_B666      Polls eight sequential registers from the protection/RTC device, deserialises each into a BCD byt...  (docs/pgm_bios_sub_B666.txt)
+  0xB6C6  sub_B6C6      Serialises eight decimal values to the protection/RTC device. Each value is converted to packed B...  (docs/pgm_bios_sub_B6C6.txt)
+  0xC876  sub_C876      Builds a 4脳4 block of sequential tiles inside the tilemap plane based at 0x904000. The destinatio...  (docs/pgm_bios_sub_C876.txt)
+  0xD394  sub_D394      Sets the 16-bit flag at 0x80374E to 1 and returns. This flag is referenced by the service-command...  (docs/pgm_bios_sub_D394.txt)
+  0xD3B2  sub_D3B2      Saves `d2/a2/a3`, loads the caller-supplied pointer into `a2`, then immediately restores the regi...  (docs/pgm_bios_sub_D3B2.txt)
+  0xD58E  sub_D58E      Builds one or two 32-bit command words describing a service/UI event and pushes them into the com...  (docs/pgm_bios_sub_D58E.txt)
+  0xD7FE  sub_D7FE      Returns the absolute value of a 32-bit integer. If the input is negative, it negates the argument...  (docs/pgm_bios_sub_D7FE.txt)
+  0xD8F4  sub_D8F4      Divides a 32-bit signed numerator (D0) by a 32-bit signed denominator (D1) and returns the remain...  (docs/pgm_bios_sub_D8F4.txt)
+  0xD930  sub_D930      Converts a non-negative 32-bit integer into an uppercase ASCII string in the requested radix (2鈥?...  (docs/pgm_bios_sub_D930.txt)
+  0xDA7C  sub_DA7C      Returns the bit-2 flag from the lookup table at 0xDFBB. The table stores per-entry configuration...  (docs/pgm_bios_sub_DA7C.txt)
+  0xDA94  sub_DA94      Reads an entry from the 0xDFBB table, checks bit1, and if set, subtracts 0x20 from the index befo...  (docs/pgm_bios_sub_DA94.txt)
+  0xD874  sub_D874      Implements 32-bit ? 16-bit division, returning quotient in D0 and remainder in D1. Handles large...  (docs/pgm_helper_sub_D874.txt)
+  0xD8D8  sub_D8D8      Divides a 32-bit value by 0x3C (60) using shift/subtract loops when direct `divu` overflows. Retu...  (docs/pgm_helper_sub_D8D8.txt)
+  0xDA16  sub_DA16      Compares two ranking data blocks for equality, accounting for alignment and structure layout. Ret...  (docs/pgm_helper_sub_DA16.txt)
+

@@ -1,4 +1,4 @@
-PGM BIOS Function Analysis Progress
+﻿PGM BIOS Function Analysis Progress
 ===================================
 
 Scope
@@ -6,6 +6,8 @@ Scope
 - Target binary: PGM BIOS (pgm_p01s.u20) loaded at base 0x000000 via IDA + MCP.
 - Objective: document every discovered function (80 total from MCP "functions --count 100").
 - Output convention: one file per function stored under docs/pgm_bios_sub_<ADDR>.txt with assembly, annotated C, and analysis notes. Helper routines live under docs/pgm_helper_*.txt.
+- Overview index: docs/pgm_bios_overview.txt 鎻愪緵瀛愮郴缁熼€熻涓庣储寮曡〃銆?
+- Assert index: docs/pgm_bios_assert_index.txt summarises ROM assert strings, source files, and mapped callers.
 
 Completed
 ---------
@@ -89,8 +91,9 @@ Completed
 In Progress / TODO
 ------------------
 - Capture sample output traces for sub_6E72 (newline/tab cases) to validate the documented branch behaviour.
-- Document divide helpers `sub_D838` and `sub_D8F4` used by the BCD converters.
 - Analyse higher-level controllers (service state machines such as sub_6F6A / sub_7222 callsites) once text renderer traces are validated.
+- Map remaining assert call sites for ade.c / ntbuf.c / cdisplay.c / .z80cm68k2z80.c using MCP string references (see docs/pgm_bios_assert_index.txt).
+- Prototype an MCP helper that lists xrefs for ROM strings to speed up future mappings.
 - Next BIOS targets: (all documented).
 
 Workflow Reminders
@@ -104,3 +107,4 @@ Open Questions
 --------------
 - Precise behaviour of helper math routines (division/remainder) to be captured when documenting sub_D874 / sub_D8D8 / sub_DA16.
 - Determine how and when the service menu initialises the character tables consulted by sub_6E72.
+

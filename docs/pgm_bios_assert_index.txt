@@ -1,0 +1,47 @@
+﻿PGM BIOS Assert Map
+===================
+
+Overview
+--------
+- Fatal diagnostics funnel through `sub_7FCC`, which displays a banner using the triad (expression string, source file string, line number) pushed by the caller before halting the system.
+- The BIOS stores those literals in ROM near `0x12Dxx` onwards; several still contain control characters (for example `c\timer.c` actually encodes `c:\timer.c`).
+- `docs/pgm_bios_assert_pairs.json` lists every detected (expression, file) pair harvested from the MCP string table for deeper scripting.
+
+Mapped Callers
+--------------
+`c:\timer.c`
+- Assertions: `handle>=0 && handle<MAXTIMER` at `0x12D8C/0x12DB4/0x12DDC`, `handle>=0 && handle<MAXTIMERFUN` at `0x12E16`.
+- Callers: `sub_F8A` line `0x2E` (`docs/pgm_bios_sub_F8A.txt`), `sub_1012` line `0x46` (`docs/pgm_bios_sub_1012.txt`), `sub_104E` line `0x4C` (`docs/pgm_bios_sub_104E.txt`).
+- Notes: Slot management helpers keep running after the assert call, so treat these checks as fatal even though the ROM continues.
+
+`c:\book.c`
+- Assertions: `m == 0 || m == 6` (`0x13534`), `size!=0` (`0x13854`), `totalgroup>1` (`0x13874`).
+- Callers: Menu layout helpers `sub_42CC` line `0x19F` and `sub_46C4` line `0x1F2`, plus shifter utility `sub_545E` lines `0x38E/0x38F`.
+- Notes: These guard ranking/service UIs. Violations currently warn but continue; treat them as strong invariants when recreating logic.
+
+`cimage.c`
+- Assertions: `n>=0 && n<img->totpic` (`0x139D6` etc.), `bank>=0 && bank<=MOVEBANK` (`0x13A56`).
+- Callers: Sprite/page renderer `sub_7932` line `0xA1` (`docs/pgm_bios_sub_7932.txt`). Additional call sites not yet mapped.
+- Notes: Indicates the presence of a `struct cimage` with fields `totpic` and `bank`; useful for naming future helpers.
+
+`ade.c`
+- Assertions: `f->state==RS_ACTIVE` at `0x1347C/0x13498`.
+- Status: Caller not yet linked; expect to surface in resource loader functions that manage ADE/animation descriptors.
+
+`ntbuf.c`
+- Assertions: `n>=0 && n<img->totpic` repeated at `0x1405E`+.
+- Status: Callers pending. Likely ties to network/serial transfer ring buffers given the `ntbuf` prefix.
+
+`cdisplay.c`
+- Assertions: `h>=0 && h<MAXDISPLAY` over a block (`0x14120`...`0x142C6`).
+- Status: Callers pending. These should guard screen/page descriptors for the service UI; investigate routines around `sub_6F6A` and `sub_7222`.
+
+`.z80cm68k2z80.c`
+- Assertions: `ubTotal < conZ80MidiIndexMax` (`0x14A04`), `((ULONG)uwZ80StartAddr + uwSize) < 0xffff` (`0x14A32`), `uwTotal < conZ80WaveIndexMax` (`0x14A6C/0x14A9A`).
+- Status: Callers pending. Expect to appear inside the M68K-to-Z80 asset download pipeline; track functions that manage ICS2115 wave/midi transfers.
+
+Next Steps
+----------
+- Use MCP disassembly to locate the missing caller addresses (search for `pea` instructions targeting the expression addresses above).
+- Once located, extend the per-function docs and cross-link from this index.
+- Consider scripting a dedicated MCP helper to list XREFs for ROM strings so the mapping stays up to date automatically.
