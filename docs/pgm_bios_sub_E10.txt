@@ -1,0 +1,78 @@
+PGM BIOS Function: sub_E10 (Fill Blocks with Constant Longword)
+---------------------------------------------------------------
+Summary: Writes a constant 32-bit pattern into consecutive memory using an unrolled loop that stores 16 longwords (64 bytes) per iteration.
+
+Proposed prototype:
+    void pgm_bios_fill_blocks(void *dst, uint32_t pattern, uint32_t block_count);
+
+Argument mapping (68K calling convention):
+- arg_0 (A0): destination pointer (longword aligned)
+- arg_4 (D0): 32-bit pattern to be written
+- arg_8 (D1): number of 16-longword blocks to initialise
+
+Assembly listing:
+`sm
+0x0e10: movem.l d0-d1/a0, -(sp)
+0x0e14: movea.l +arg_0(sp), a0
+0x0e18: move.l  +arg_4(sp), d0
+0x0e1c: move.l  +arg_8(sp), d1
+0x0e20: and.l   d1, d1                ; check for zero blocks
+0x0e22: beq.w   0x0e4c
+0x0e26: subq.l  #1, d1                ; DBF requires (count - 1)
+0x0e28: move.l  d0, (a0)+             ; write 16 longwords per loop
+0x0e2a: move.l  d0, (a0)+
+0x0e2c: move.l  d0, (a0)+
+0x0e2e: move.l  d0, (a0)+
+0x0e30: move.l  d0, (a0)+
+0x0e32: move.l  d0, (a0)+
+0x0e34: move.l  d0, (a0)+
+0x0e36: move.l  d0, (a0)+
+0x0e38: move.l  d0, (a0)+
+0x0e3a: move.l  d0, (a0)+
+0x0e3c: move.l  d0, (a0)+
+0x0e3e: move.l  d0, (a0)+
+0x0e40: move.l  d0, (a0)+
+0x0e42: move.l  d0, (a0)+
+0x0e44: move.l  d0, (a0)+
+0x0e46: move.l  d0, (a0)+
+0x0e48: dbf     d1, 0x0e28            ; repeat until counter hits -1
+0x0e4c: movem.l (sp)+, d0-d1/a0
+0x0e50: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_bios_fill_blocks(void *dst, uint32_t pattern, uint32_t block_count) {
+    uint32_t *out = (uint32_t *)dst;
+
+    if (block_count == 0) {
+        return;
+    }
+
+    do {
+        out[0]  = pattern;
+        out[1]  = pattern;
+        out[2]  = pattern;
+        out[3]  = pattern;
+        out[4]  = pattern;
+        out[5]  = pattern;
+        out[6]  = pattern;
+        out[7]  = pattern;
+        out[8]  = pattern;
+        out[9]  = pattern;
+        out[10] = pattern;
+        out[11] = pattern;
+        out[12] = pattern;
+        out[13] = pattern;
+        out[14] = pattern;
+        out[15] = pattern;
+        out += 16;
+    } while (--block_count != 0);
+}
+`
+
+Analysis notes:
+- Mirrors the earlier block copy routine but writes a duplicated constant rather than consuming source data.
+- The 16-longword stride suggests a focus on cache-line or hardware buffer alignment (likely VRAM clears or timer table initialisation).
+- Preservation of D0/D1/A0 via movem.l indicates a callable ROM utility safe for interrupt use.
+- Callers must ensure the destination pointer is 32-bit aligned; no alignment protection here.

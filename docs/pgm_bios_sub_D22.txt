@@ -1,0 +1,64 @@
+PGM BIOS Function: sub_D22 (Block Copy Helper)
+----------------------------------------------
+Summary: Copies 32-byte blocks from a source buffer to a destination buffer using unrolled longword moves.
+
+Proposed prototype:
+    void pgm_bios_block_copy(void *dst, const void *src, uint32_t block_count);
+
+Argument mapping (68K calling convention):
+- arg_0 (A1): destination pointer (write target)
+- arg_4 (A0): source pointer (read from BIOS/ROM/RAM)
+- arg_8 (D0): number of 32-byte blocks to copy (each block = 8 longwords)
+
+Assembly listing:
+`sm
+0x0d22: movem.l d0/a0-a1, -(sp)
+0x0d26: movea.l +arg_0(sp), a1
+0x0d2a: movea.l +arg_4(sp), a0
+0x0d2e: move.l  +arg_8(sp), d0
+0x0d32: and.l   d0, d0            ; check for zero blocks
+0x0d34: beq.w   0x0d4e            ; nothing to copy
+0x0d38: subq.l  #1, d0            ; prepare DBF counter (= blocks - 1)
+0x0d3a: move.l  (a0)+, (a1)+      ; copy 8 longs per loop iteration
+0x0d3c: move.l  (a0)+, (a1)+
+0x0d3e: move.l  (a0)+, (a1)+
+0x0d40: move.l  (a0)+, (a1)+
+0x0d42: move.l  (a0)+, (a1)+
+0x0d44: move.l  (a0)+, (a1)+
+0x0d46: move.l  (a0)+, (a1)+
+0x0d48: move.l  (a0)+, (a1)+
+0x0d4a: dbf     d0, 0x0d3a        ; repeat until counter hits -1
+0x0d4e: movem.l (sp)+, d0/a0-a1
+0x0d52: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_bios_block_copy(void *dst, const void *src, uint32_t block_count) {
+    uint32_t *out = (uint32_t *)dst;
+    const uint32_t *in = (const uint32_t *)src;
+
+    if (block_count == 0) {
+        return;
+    }
+
+    do {
+        out[0] = in[0];
+        out[1] = in[1];
+        out[2] = in[2];
+        out[3] = in[3];
+        out[4] = in[4];
+        out[5] = in[5];
+        out[6] = in[6];
+        out[7] = in[7];
+        out += 8;
+        in  += 8;
+    } while (--block_count != 0);
+}
+`
+
+Analysis notes:
+- Uses movem.l prologue/epilogue to preserve D0/A0/A1, implying a leaf helper callable from ROM code.
+- Performs an early-out when lock_count is zero; otherwise relies on DBF looping behaviour (locks iterations).
+- Unrolled eight move.l operations per iteration for throughput, matching cache line / DMA stride expectations on PGM hardware.
+- Likely used for copying graphics tiles or firmware patches from ROM to RAM; watch callers for block count derivation.

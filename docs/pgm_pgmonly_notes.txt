@@ -1,0 +1,36 @@
+PGM/PGM2-Only MAME Build Notes
+================================
+
+Scope
+-----
+Custom MAME build trimmed to only PGM and PGM2 hardware. `mamepgmonly.exe` resides in the repository root and expects ROM content under `roms/`.
+
+Source Adjustments
+------------------
+- Added target script `scripts/target/mame/pgmonly.lua` to declare the reduced project, enabling only the CPU, sound, machine, and protection devices the PGM drivers require.
+- Generated driver whitelist `src/mame/pgmonly.lst`; it enumerates every supported PGM/PGM2 set from `src/mame/igs/pgm.cpp` and `src/mame/igs/pgm2.cpp`.
+- Wrapped `rom_load_manager::verify_length_and_hash` in `src/emu/romload.cpp` with a `DISABLE_ROM_VERIFY` guard so that checksum tests can be suppressed at build time.
+
+Building
+--------
+1. Launch the MSYS2 MinGW 64-bit shell (`msys64\mingw64.exe`) to ensure GCC 11.2 and the win32 OSD toolchain are active.
+2. From the shell, build with:
+   `make SUBTARGET=pgmonly OSD=winui DEFS+=-DDISABLE_ROM_VERIFY -j8`
+   This produces `mamepgmonly.exe` under the repository root (`D:/haishu/pgm/mame`). Re-run the command after source tweaks to rebuild.
+
+ROM Layout
+----------
+- Place PGM BIOS ZIP and extracted sets in `roms/`. Example: keep `pgm.zip` intact and also extract its BIOS files into the same folder for convenience.
+- With `DISABLE_ROM_VERIFY` defined, mismatched CRC/SHA1 values are ignored, easing work with WIP or homebrew ROM images.
+
+Reverse-Engineering Pointers
+----------------------------
+- Entry driver logic: `src/mame/igs/pgm.cpp` (`pgm_state`, `pgm_mem`, interrupt/timer hookups) and `src/mame/igs/pgm2.cpp` for the sequel hardware.
+- Video pipeline: `src/mame/igs/igs023_video.cpp` (tilemaps, sprite mixer, priority system) alongside `igs023_video.h`.
+- Protection and encryption blocks: `src/mame/igs/pgmprot_*.cpp`, plus `src/mame/igs/pgmcrypt.cpp` and `src/mame/igs/igs036crypt.cpp`.
+- Peripheral ICs: review `igs022.cpp`, `igs025.cpp`, `igs027a.cpp`, and `igs028.cpp` for MCU/ASIC behavior and command handlers.
+
+Next Checks
+-----------
+- Run representative titles (e.g. `mamepgmonly.exe orlegend`, `kov`, `ddp3`) to confirm the slim build and disabled CRC checks behave correctly.
+- When analyzing binaries in IDA, align function naming with the memory map comments inside `pgm.cpp` and correlate sprite/tile RAM usage with `igs023_video.cpp` routines.

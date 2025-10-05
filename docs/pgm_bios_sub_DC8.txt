@@ -1,0 +1,48 @@
+PGM BIOS Function: sub_DC8 (Word Copy Helper)
+---------------------------------------------
+Summary: Copies 16-bit words from a source buffer to a destination buffer using a simple counted loop.
+
+Proposed prototype:
+    void pgm_bios_copy_words(void *dst, const void *src, uint32_t word_count);
+
+Argument mapping (68K calling convention):
+- arg_0 (A1): destination pointer (word-oriented)
+- arg_4 (A0): source pointer
+- arg_8 (D0): number of words to transfer
+
+Assembly listing:
+`sm
+0x0dc8: movem.l d0/a0-a1, -(sp)
+0x0dcc: movea.l +arg_0(sp), a1
+0x0dd0: movea.l +arg_4(sp), a0
+0x0dd4: move.l  +arg_8(sp), d0
+0x0dd8: and.l   d0, d0            ; early-out on zero word count
+0x0dda: beq.w   0x0de6
+0x0dde: subq.l  #1, d0            ; DBF expects count-1
+0x0de0: move.w  (a0)+, (a1)+
+0x0de2: dbf     d0, 0x0de0        ; repeat for each word
+0x0de6: movem.l (sp)+, d0/a0-a1
+0x0dea: rts
+`
+
+Reconstructed C implementation:
+`c
+void pgm_bios_copy_words(void *dst, const void *src, uint32_t word_count) {
+    uint16_t *out = (uint16_t *)dst;
+    const uint16_t *in = (const uint16_t *)src;
+
+    if (word_count == 0) {
+        return;
+    }
+
+    do {
+        *out++ = *in++;
+    } while (--word_count != 0);
+}
+`
+
+Analysis notes:
+- Shares the same calling convention wrapper as the 32-byte block copier, pointing to a small BIOS utility library.
+- Uses move.w to keep byte order intact (no swapping) because the 68K CPU operates in big-endian mode; IDA represents data in file order after earlier byte swapping.
+- Expect callers to use this for palette, tile attribute, or sprite table uploads where alignment matters but throughput needs are smaller than the longword helper.
+- The function is re-entrant and preserves registers via movem.l, making it safe from interrupt contexts.

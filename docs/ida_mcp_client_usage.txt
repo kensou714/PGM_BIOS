@@ -1,0 +1,46 @@
+IDA MCP Client Usage
+====================
+
+Prerequisites
+-------------
+- Launch IDA Pro with the `ida-pro-mcp` plugin enabled (Edit > Plugins > MCP) and load your PGM IDB.
+- Confirm the MCP HTTP server is listening (default `http://127.0.0.1:13338/mcp`). You can change the port inside the plugin; match it when calling the client.
+- Install the `requests` Python package if it is not already available (`pip install requests`).
+
+Running the Client
+------------------
+The helper lives at `D:/haishu/pgm/ida_mcp_client.py` and now understands multiple sub-commands:
+
+- Show IDB metadata:
+  `python ida_mcp_client.py info`
+
+- List functions (first 20 by default):
+  `python ida_mcp_client.py functions --count 50`
+
+- Fetch a specific function:
+  `python ida_mcp_client.py function --address 0x1000`
+  or by name: `python ida_mcp_client.py function --name pgm_state__video_start`
+
+- Decompile / disassemble a function:
+  `python ida_mcp_client.py decompile 0x1000`
+  `python ida_mcp_client.py disassemble 0x1000`
+
+- Enumerate strings / globals:
+  `python ida_mcp_client.py strings --offset 0 --count 30`
+  `python ida_mcp_client.py globals --count 30`
+
+- Apply quick edits from the command line:
+  `python ida_mcp_client.py rename 0x1000 pgm_irq_handler`
+  `python ida_mcp_client.py comment 0xc00008 "Z80 release + ICS2115 reset"`
+
+Host & Port Detection
+---------------------
+- By default the client auto-detects `127.0.0.1` on Windows and the Windows-host IP when run inside WSL2.
+- Override detection via `--host` / `--port` switches, or set an environment variable `IDA_MCP_HOST` before running the script.
+- Connection failures will print a helpful error (`Could not connect ...`). Double-check the plugin status and firewall if you see this.
+
+Workflow Tips
+-------------
+1. Keep IDA running with the PGM IDB open while you experiment in a terminal.
+2. Combine the MCP client with the earlier `docs/pgm_ida_setup.py` script; run the setup first for segment labels, then use the MCP client for quick lookups.
+3. For batch exports, redirect output to files (e.g. `python ida_mcp_client.py disassemble 0x1000 > pgm_irq.asm`).

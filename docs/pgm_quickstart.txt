@@ -1,0 +1,34 @@
+PGM Research Quickstart
+=======================
+
+Overview
+--------
+- Custom `mamepgmonly.exe` build only supports PGM/PGM2 hardware with CRC checks disabled (`DEFS+=-DDISABLE_ROM_VERIFY`).
+- Reference documentation lives in `docs/pgm_pgmonly_notes.txt` (build pipeline, ROM layout, driver map).
+- IDA environment scripted via `docs/pgm_ida_setup.py` to create 68000 segments/I/O labels after loading BIOS at `0x000000`.
+- MCP client at `ida_mcp_client.py` offers command-line access to the running IDA session (default port 13337/13338); see `docs/ida_mcp_client_usage.txt` for details.
+
+One-Time Prep
+-------------
+1. Build toolchain: MSYS2 MinGW64 with GCC 11.2 (`msys64\mingw64.exe`).
+2. ROM assets: keep `roms/pgm.zip` intact; extracted BIOS dumps available for IDA/analysis.
+3. Ensure the `requests` Python package is installed for the MCP client (`pip install requests`).
+
+Starting a New Analysis Session
+-------------------------------
+1. Launch IDA Pro with the PGM BIOS (`pgm_p01s.u20`) loaded at `0x000000` (remember to swap 16-bit words if you import the raw dump).
+2. In IDA run `File > Script file...`, then select `docs/pgm_ida_setup.py` to populate segments and labels (`Shift+F7` shows the `PGM_*` ranges afterward).
+3. Enable the MCP plugin in IDA (`Edit > Plugins > MCP`) and note the listening port (commonly 13337 or 13338).
+4. From a terminal at the repository root: `python ida_mcp_client.py --port 13337 info` to verify connectivity; additional commands (`functions`, `decompile`, `comment`, etc.) are listed in `docs/ida_mcp_client_usage.txt`.
+
+Helpful Commands & Scripts
+--------------------------
+- Build MAME: `make SUBTARGET=pgmonly OSD=winui DEFS+=-DDISABLE_ROM_VERIFY -j8`
+- IDA byte-swap helper (if loading raw dump): simple loop swapping every 16-bit word or the provided snippet in the notes above.
+- MCP quick edits: `python ida_mcp_client.py rename 0xADDR new_name` ; `python ida_mcp_client.py comment 0xADDR "text"`.
+
+Next Steps / Reminders
+----------------------
+- Use `docs/pgm_pgmonly_notes.txt` for driver/source focus areas when reversing.
+- Maintain MCP session logs or exports as needed (redirect CLI output to files for archival).
+- Re-run `docs/pgm_ida_setup.py` whenever a fresh IDB is created to keep naming consistent.

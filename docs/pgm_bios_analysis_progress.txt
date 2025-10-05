@@ -1,0 +1,31 @@
+PGM BIOS Function Analysis Progress
+===================================
+
+Scope
+-----
+- Target binary: PGM BIOS (pgm_p01s.u20) loaded at base 0x000000 via IDA + MCP.
+- Objective: document every discovered function (80 total from MCP unctions --count 100).
+- Output convention: one file per function stored under docs/pgm_bios_sub_<ADDR>.txt with assembly, annotated C, and analysis notes.
+
+Completed
+---------
+1. sub_D22 (docs/pgm_bios_sub_D22.txt) ? 32-byte block copy helper.
+2. sub_DC8 (docs/pgm_bios_sub_DC8.txt) ? sequential word copy helper.
+
+In Progress / TODO
+------------------
+- Next candidates (in address order): sub_E10, sub_F40, sub_F8A.
+- Confirm argument naming by cross-referencing callers inside IDA where necessary.
+- Capture any discovered global state or hardware register usage in the analysis notes for reuse.
+
+Workflow Reminders
+------------------
+- Keep IDA running with the PGM BIOS IDB and the ida-pro-mcp plugin listening on port 13337.
+- Use the MCP client from repo root, e.g. python ida_mcp_client.py --port 13337 disassemble 0x0e10.
+- After writing each analysis file, append the function name here under "Completed" and adjust the TODO list to point at the next targets.
+- Preserve ASCII encoding when updating docs.
+
+Open Questions
+--------------
+- Need to verify whether any helper relies on implicit global variables (BIOS RAM) that should be documented alongside the function description.
+- Identify whether any functions call into Z80 co-processor routines; note linkage when found.
