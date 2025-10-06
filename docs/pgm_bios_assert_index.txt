@@ -26,19 +26,19 @@ Mapped Callers
 
 `ade.c`
 - Assertions: `f->state==RS_ACTIVE` at `0x1347C/0x13498`.
-- Status: Caller not yet linked; expect to surface in resource loader functions that manage ADE/animation descriptors.
+- Callers: routine at `0x0319A` (服务渐变槽初始化；在复制结构前要求 `slot->state == RS_ACTIVE`) 。
 
 `ntbuf.c`
 - Assertions: `n>=0 && n<img->totpic` repeated at `0x1405E`+.
-- Status: Callers pending. Likely ties to network/serial transfer ring buffers given the `ntbuf` prefix.
+- Callers: 下载调度例程 `0x0A858`（调用 `sub_772C`/`sub_A3B8` 建立网络缓冲区时验证数量上限）。
 
 `cdisplay.c`
 - Assertions: `h>=0 && h<MAXDISPLAY` over a block (`0x14120`...`0x142C6`).
-- Status: Callers pending. These should guard screen/page descriptors for the service UI; investigate routines around `sub_6F6A` and `sub_7222`.
+- Callers: 显示描述符注册函数 `0x0B8E0`（服务菜单显示队列，使用 `0x8034E2` 表格）。
 
 `.z80cm68k2z80.c`
 - Assertions: `ubTotal < conZ80MidiIndexMax` (`0x14A04`), `((ULONG)uwZ80StartAddr + uwSize) < 0xffff` (`0x14A32`), `uwTotal < conZ80WaveIndexMax` (`0x14A6C/0x14A9A`).
-- Status: Callers pending. Expect to appear inside the M68K-to-Z80 asset download pipeline; track functions that manage ICS2115 wave/midi transfers.
+- Callers: `sub_CFC8` 及其辅助流程（`0x0D0E2`, `0x0D174`）在 M68K→Z80 数据下载时逐块校验 Midi/Wave 索引。
 
 Next Steps
 ----------

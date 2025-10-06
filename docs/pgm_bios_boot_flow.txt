@@ -1,0 +1,154 @@
+﻿PGM BIOS 启动序列分析
+====================
+
+概览
+----
+- 复位向量指向 0x00CE04。该入口主要负责校验位于 RAM 0xC10000 的 Z80 下载缓冲是否与 ROM 表 `0xEA54` 保持一致，一旦出现差异即调用 `sub_6C9A`/`sub_7516` 显示错误信息并挂起。
+- 启动路径随后会根据参数调用 `sub_CEA4`/`sub_CEFE` 等上传包装器，将 68K 侧准备的波形/乐谱数据写入 Z80 共享区，同时更新命令寄存器 (`0xC00008/0xC0000A`) 并拉起 `sub_D394` 标记“等待处理”。
+- `sub_CF58` 和 `sub_CFC8` 协调下载结果验证与断言处理，配合 ROM 字符串 `MUSIC DOWNLOAD ERROR ...`、`.z80cm68k2z80.c` 提示链路状态。
+
+sub_CE04 — 启动校验与错误提示
+------------------------------
+核心流程（简化汇编摘录）：
+```
+CE04: pea     (0x1A73).w          ; word 计数
+CE08: pea     (0xEA54).l          ; 源地址：期望表
+CE0E: move.l  a2, -(sp)           ; 目标：a2（稍后恢复）
+CE10: jsr     sub_DC8             ; 拷贝 `0x1A73` 个 word 到 a2（初始化缓存）
+CE1A: lea     0xC10000, a2        ; RAM 校验基址
+CE20: d2 = 0
+Loop:
+  d0 = word ptr [0xEA54 + d2*2]
+  if (word ptr [a2] != d0) {
+      sub_6C9A();                               ; 预置服务调色板
+      draw error via sub_7516("<<<Error 68K:%x Z80Addr:%x Data:%x>>>",
+                             actual, a2, expected);
+      for (;;);                                ; 保持停机状态
+  }
+  a2 += 2; d2 += 1;
+  if (d2 < 0x1A73) continue;
+Delay: do { d2 += 1; } while (d2 <= 10);        ; 简易延时
+write 0x0A0A -> 0xC0000A
+write 0x5050 -> 0xC00008
+sub_D394();                                      ; 挂起“有命令待处理”标志
+恢复 d2/a2 并返回
+```
+解释：
+- ROM 表 `0xEA54` 存放 Z80 下载缓冲的签名/期望值，启动时逐项对比 RAM 版本；若 M68K ↔ Z80 下载流程被破坏（或 RAM 未初始化），立即显示三项参数：68K 实际值、Z80 地址、期望值。
+- 错误文本位于 `0x149AC`：`<<<Error 68K:%x Z80Addr:%x Data:%x>>>`。
+- 成功时通过向 `0xC00008/0xC0000A` 写入 `0x5050/0x0A0A` 与 Z80 握手，通知其缓冲已准备好。
+
+C 风格伪代码：
+```c
+void pgm_boot_verify_z80_buffer(void) {
+    const uint16_t *expected = (const uint16_t *)0x000EA54;
+    volatile uint16_t *target = (uint16_t *)0xC10000;
+    const uint32_t entries = 0x1A73;
+
+    for (uint32_t i = 0; i < entries; ++i) {
+        uint16_t want = expected[i];
+        uint16_t have = target[i];
+        if (have != want) {
+            pgm_preset_service_palettes();
+            pgm_renderf_basic(0x0000000A, 0x00000014,
+                              "<<<Error 68K:%x Z80Addr:%x Data:%x>>>",
+                              have, (uint32_t)(0xC10000 + 2 * i), want);
+            for (;;) { /* fatal halt */ }
+        }
+    }
+
+    /* 简单延时，避免过快触发硬件 */
+    for (uint32_t spin = 0; spin < 10; ++spin) {
+        __asm__ volatile ("nop");
+    }
+
+    *(volatile uint16_t *)0xC0000A = 0x0A0A;
+    *(volatile uint16_t *)0xC00008 = 0x5050;
+    pgm_set_queue_pending();   /* sub_D394 */
+}
+```
+
+sub_CEA4 / sub_CEFE — Z80 下载写入包装
+--------------------------------------
+两者结构近似，仅参数顺序互换，用于把外部缓冲写入 `0xC10000 + offset`：
+```
+CEA4(arg0=src_ptr, arg1=word_count, arg2=offset):
+  a2 = 0xC10000 + arg2
+  sub_D38C(a2)                              ; 进入共享内存窗口（钩子）
+  *(0xC0000A) = 0x45D3                      ; 通知 Z80 有写入
+  简短延时（5 次空转）
+  sub_DC8(dst=a2, src=arg0, words=arg1)
+  *(0xC0000A) = 0x0A0A
+  sub_D394()                                ; 设置“等待处理”标志
+
+CEFE(arg0=src_ptr, arg1=offset, arg2=word_count) 的调用顺序略有改动，
+但最终效果一致，只是针对不同调用者的堆栈布局封装。
+```
+伪代码：
+```c
+static void pgm_write_z80_words(const void *src,
+                                uint16_t word_count,
+                                uint16_t offset)
+{
+    volatile uint16_t *dst = (uint16_t *)(0xC10000 + offset);
+
+    pgm_queue_hook_enter(dst);   // sub_D38C，占位钩子
+
+    *(volatile uint16_t *)0xC0000A = 0x45D3;
+    for (int i = 0; i < 5; ++i) { /* small delay */ }
+
+    pgm_bios_copy_words(dst, src, word_count);
+
+    *(volatile uint16_t *)0xC0000A = 0x0A0A;
+    pgm_set_queue_pending();
+}
+```
+
+sub_CF58 — 下载结果校验器
+-------------------------
+- 参数：`(expected_ptr, actual_ptr, word_count)`。
+- 循环比较两段 word 缓冲；若发现差异，则调用 `sub_6C9A` 设置调色板，并通过 `sub_7516` 输出字符串 `"MUSIC DOWNLOAD ERROR T=%06X(%04X) S=%06X(%04X)"`，显示目标/源各自的地址与数据，对应 `.z80cm68k2z80.c` 中的自检逻辑。
+- 调用 `sub_17C2(1, 0)`（已知是 UI 等待/复位钩子）后才继续下一个比较，确保错误信息能够被察看。
+
+伪代码：
+```c
+bool pgm_verify_block(uint16_t *target, uint16_t *source, uint32_t words) {
+    for (uint32_t i = 0; i < words; ++i) {
+        uint16_t have = target[i];
+        uint16_t want = source[i];
+        if (have != want) {
+            pgm_preset_service_palettes();
+            pgm_renderf_basic(0x0000000A, 0x0000000A,
+                              "MUSIC DOWNLOAD ERROR T=%06X(%04X) S=%06X(%04X)",
+                              0xC10000 + (i << 1), have,
+                              (uint32_t)source + (i << 1), want);
+            pgm_service_wait_key(1, 0);   // sub_17C2
+        }
+    }
+    return true;
+}
+```
+
+sub_CFC8 — `.z80cm68k2z80` 下载调度
+----------------------------------
+主要职责：
+1. 接收指向下载脚本的指针（结构体数组），以及条目数 `d5`。
+2. 校验条目上限（< 0x40），触发 `sub_7FCC` 断言以捕获非法请求；断言字符串分别来自 `.z80cm68k2z80.c`：
+   - `conZ80MidiIndexMax`
+   - `((ULONG)uwZ80StartAddr + uwSize) < 0xffff`
+3. 使用 `sub_D7D8`（未完文档，已知从断言映射到 MIDI/Wave 下载）解析条目，计算写入基址 `0xC10000 + d3`，同时在 0xC10052/0x803768 中记录本次片段长度。
+4. 遍历每个条目：
+   - 在 `0xC10070` 写入 header（`d3` 高低位组合）。
+   - 读取条目描述（源指针、word数），调用 `sub_DC8` 复制到共享区。
+   - 立即调用 `sub_CF58` 对已经写入的数据进行逐字校验。
+   - 根据 word 数更新 `d3` 和目标指针 `a3`。
+5. 所有条目完成后，向 `0xC0000A` 写 `0x0A0A`，再调 `sub_D394` 通知 Z80 处理。
+6. 返回累积写入的字节数（`d6 * 2`）。
+
+此过程对应 `.z80cm68k2z80.c` 中的下载队列：BIOS 将多个波形/乐谱块写入共享 RAM，再由 Z80 读取播放。断言与错误提示确保资源未越界、数据完整。
+
+后续步骤
+--------
+- 复位阶段尚未完全解析的钩子：`sub_D38C`（进入共享区前的空壳）与 `sub_D7D8`（条目解析）；需要结合 MCP 进一步拉取其调用关系。
+- `sub_CE04` 前的几条指令 (`0xCDF0` 附近) 仍待确认用途，推测为 RAM 填充或断言初始化；建议在 IDA 中交叉引用 `sub_EF8` 以还原其参数。
+- 为生成替代 ROM，需要把上述接口抽象为 C/汇编模块，确保对 `0xC00008/0xC0000A/0xC100xx` 的写序和延时保持兼容。

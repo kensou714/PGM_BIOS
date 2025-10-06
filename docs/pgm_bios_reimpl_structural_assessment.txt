@@ -1,0 +1,52 @@
+﻿PGM BIOS 模块断言与替代结构评估
+==============================
+
+断言 → 模块映射
+--------------
+| 模块 | 关键断言 | 函数入口 | 数据结构 | 备注 |
+| ---- | -------- | -------- | -------- | ---- |
+| 定时器 (timer.c) | `handle>=0 && handle<MAXTIMER(FUN)` | `sub_F40`, `sub_F8A`, `sub_1012`, `sub_104E` | 0x801550 (槽数组), 0x801560 (计数) | 4 槽固定表；替代实现需保留 0xFFFFFFFF 空闲标记与 `sub_8120` 报错流程。 |
+| ADE 渐变槽 (ade.c) | `f->state==RS_ACTIVE` | 0x0319A | 0x802058 渐变表、0x8021xx palette 队列 | 复制前检查 `slot->state`; 当状态异常时调用 `sub_7FCC` 停机。 |
+| Book/Menu (book.c) | `m == 0 || m == 6`、`size!=0`、`totalgroup>1` | `sub_42CC`, `sub_46C4`, `sub_545E` | 0x8034xx 菜单模板 | 影响服务排名与统计屏的布局，违反时仍继续执行但需视为强约束。 |
+| NT 缓冲 (ntbuf.c) | `n>=0 && n<img->totpic` | 0x0A858 | 0x80346E (缓冲描述符), `sub_772C`, `sub_A3B8` | 下载调度前验证索引范围；失败即 `sub_7FCC`。 |
+| 显示描述符 (cdisplay.c) | `h>=0 && h<MAXDISPLAY` | 0x0B8E0 | 0x8034E2 (display nodes), 0x80351A (链表头) | 控制服务 UI 页面注册顺序。 |
+| 图像渲染 (cimage.c) | `n<img->totpic`, `bank<=MOVEBANK` | `sub_7932` 等 | 图像表/波形索引 | 与 UI 渲染遍历紧密耦合；断言未触发时继续执行。 |
+| Z80 下载 (.z80cm68k2z80.c) | Midi/Wave 索引/地址界限 | `sub_CFC8`, `0x0D0E2`, `0x0D174` | 0xC10000 共享 RAM, `0xC0000A/08` 控制口 | 所有下载流程统一经 `sub_CFC8`，断言触发即停机。 |
+
+替代 ROM 模块化建议
+------------------
+1. **启动层 (boot)**：
+   - 入口 `0xCE04` 实现 RAM 校验 + Z80 握手；独立成 `boot_main()`，在新固件中保留原序列 (`0x5050`/`0x0A0A` 写法)。
+   - 复位后调用 `timer_init()`、`palette_init()`、`service_ui_init()` 等模块化函数。
+
+2. **任务/定时器层**：
+   - 暴露 `timer_alloc`, `timer_free`, `timer_read`, `timer_write` 等 API，对应原 BIOS 入口地址（可通过跳板保留 ABI）。
+   - 内部结构与 0x801550 表一致，新固件可用 C 数组实现，再通过汇编导出符号到固定地址。
+
+3. **UI 服务层**：
+   - 分拆为 `fade_manager`（处理 0x802058）、`menu_renderer`（book/cdisplay 断言）、`text_stream`（`sub_6E72`）。
+   - 每个模块在初始化阶段执行自检：当断言失败时调用统一的 `bios_panic(expr, file, line)`，保留 `sub_7FCC` 行为。
+
+4. **音频下载层**：
+   - `z80_download_dispatch()` 负责循环 `sub_CFC8` 的逻辑；对 Z80 控制口的握手写入用 inline 函数封装来减少重复。
+   - Midi/Wave 队列结构保持 ROM 原样（便于游戏直接调用）。
+
+5. **通信与 RTC**：
+   - 保留 `sub_B55E`/`sub_B586`/`sub_B5BC` 功能，抽象为 `rtc_shift_out(byte)` 与 `rtc_shift_in(bitmask)`。
+   - 在替代固件中可用查表法实现同样的串行协议。
+
+结构评估
+--------
+- **耦合点**：服务 UI 与下载通道共享 `sub_7FCC` 断言入口。替代实现需提供统一的 `panic` 接口，并在调试构建中打印日志而非立即死机（可配置）。
+- **地址兼容性**：目前多数游戏直接调用 BIOS 例程裸地址（例如 `sub_1188`, `sub_6E72`）；建议保留旧入口，内部跳转到新 C 实现。
+- **数据表**：
+  - `0xEA54` 校验表、`0xE232` 位掩码、`0x18514` 布局等均被硬编码使用。可先保留 ROM 原始数据，在重构后期再考虑可变配置。
+  - 共享 RAM (0xC10000) 的布局在多个模块中被假设一致，必须严格复刻。
+- **断言策略**：可将 ROM 中的 `(expr, file)` 对应到枚举，结合 `bios_panic(assert_id, details)` 统一处理，方便将来切换到日志/屏幕输出。
+
+下一步建议
+----------
+1. 针对 `0x0319A / 0x0A858 / 0x0B8E0` 新增详细函数文档，明确结构字段含义，便于 C 语言重写。
+2. 建立 `panic_table`，将断言 ID → 文字映射整理成结构体数组（从 `pgm_bios_assert_pairs.json` 自动生成）。
+3. 为 Z80 下载层编写伪代码实现草稿，并在 MAME 中验证替代 ROM 能正确装载音频资源。
+4. 在 `docs/pgm_bios_reimpl_requirements.txt` 基础上扩展模块 todo list，标记“已解耦/待分析”。

@@ -29,6 +29,9 @@ The helper lives at `D:/haishu/pgm/ida_mcp_client.py` and now understands multip
   `python ida_mcp_client.py strings --offset 0 --count 30`
   `python ida_mcp_client.py globals --count 30`
 
+- Locate functions referencing a ROM string/address:
+  `python ida_mcp_client.py string-xrefs 0x1347C --port 13337`
+
 - Apply quick edits from the command line:
   `python ida_mcp_client.py rename 0x1000 pgm_irq_handler`
   `python ida_mcp_client.py comment 0xc00008 "Z80 release + ICS2115 reset"`

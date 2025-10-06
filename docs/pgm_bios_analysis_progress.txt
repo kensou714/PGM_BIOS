@@ -88,13 +88,21 @@ Completed
 75. sub_DA7C  (docs/pgm_bios_sub_DA7C.txt)
 76. sub_DA94  (docs/pgm_bios_sub_DA94.txt)
 
+Supporting Docs
+---------------
+- docs/pgm_bios_reimpl_requirements.txt — BIOS 替代目标与约束汇总。
+- docs/pgm_bios_boot_flow.txt — 启动/下载流程拆解。
+- docs/pgm_bios_hw_interfaces.txt — 内存与 IO 映射参考。
+- docs/pgm_bios_assert_xrefs_20251006.txt — 断言调用者速查表。
+- docs/pgm_bios_reimpl_structural_assessment.txt — 模块划分与后续建议。
+
 In Progress / TODO
 ------------------
 - Capture sample output traces for sub_6E72 (newline/tab cases) to validate the documented branch behaviour.
 - Analyse higher-level controllers (service state machines such as sub_6F6A / sub_7222 callsites) once text renderer traces are validated.
-- Map remaining assert call sites for ade.c / ntbuf.c / cdisplay.c / .z80cm68k2z80.c using MCP string references (see docs/pgm_bios_assert_index.txt).
-- Prototype an MCP helper that lists xrefs for ROM strings to speed up future mappings.
-- Next BIOS targets: (all documented).
+- Document routines 0x0319A / 0x0A858 / 0x0B8E0 to lock down ADE、NTBUF、CDISPLAY 结构字段。
+- Draft a unified panic/assertion table (ID + string pairs) and decide how the replacement BIOS will surface diagnostics.
+- Outline C 级伪代码 for the Z80 download dispatcher (`sub_CFC8` family) and define a regression plan under MAME.
 
 Workflow Reminders
 ------------------
